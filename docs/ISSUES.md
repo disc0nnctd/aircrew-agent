@@ -10,7 +10,7 @@ where something is unverified it says so.
 | --- | --- | --- |
 | 38 questions through the **engine** | **36/36** gradable, 2 GEN | yes, `python -m aircrew.scoreboard` |
 | 6 scenarios | **19/19** checks | yes, same command |
-| Agent loop + claim gate unit tests | **10/10** | yes, `python -m tests.test_agent_loop` |
+| Agent loop + claim gate unit tests | **13/13** | yes, `python -m tests.test_agent_loop` |
 | 38 questions through the **agent** (luna), run 1 | 21/38 | yes, measured |
 | 38 questions through the **agent** (luna), run 2 | 32/38 as reported | yes, measured |
 | Run 2 **re-scored** after fixing the scorer | **35/36** gradable | yes, offline replay of the recorded calls |
@@ -122,6 +122,8 @@ the engine number.
 | `check_assignment(positioned=True)` returned no deadhead detail | Q21 could not state the consequence | positioning info and its consequence sentence now on the result |
 | **The replay scorer escaped non-ASCII** | `json.dumps` turned the answer keys' em dash into `—`, so Q33 and Q35 could never match — two correct answers scored as failures | `ensure_ascii=False` |
 | The replay scorer graded rubrics | Q36 and Q38 have `must_include` / "open-ended" keys and can only ever fail a string match | marked GEN and excluded from the denominator, same rule as the engine scoreboard |
+| **The chat pane needed `openai`, and died silently without it** | a missing package raised `SystemExit`, a `BaseException`, so `server.py`'s `except Exception` missed it: the handler thread died and the browser saw a closed socket. `/api/health` said `"model": true` at the same time, because `get_agent()` defers the import | the loop now posts to `/chat/completions` over stdlib `urllib`, with retry. No dependency, so the health answer is honest again |
+| **Two tools raised through `dispatch`, killing the turn** | `dispatch` caught only `TypeError`, and the loop calls it unguarded, so `validate` missing `aircraft_type` (or `pairing_id`) and `duty_timeline` with an unknown pairing became a 502 for the whole turn instead of a result the model could correct | `dispatch` returns an envelope for `KeyError` and for anything else, naming the missing field |
 
 The scorer bugs are worth dwelling on: **the measurement was wrong in the
 direction that made the system look worse**, and two of the six "failures" in

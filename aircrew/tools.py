@@ -942,3 +942,19 @@ def dispatch(tools: Tools, name: str, args: dict) -> dict:
         return fn(**clean_args(args))
     except TypeError as exc:
         return envelope(f"Bad arguments for {name}: {exc}", {"error": str(exc)})
+    except KeyError as exc:
+        # A required field the schema did not insist on, or an id that does not
+        # exist. This has to come back as a result rather than an exception:
+        # the loop calls dispatch unguarded, so anything raised here kills the
+        # whole turn instead of giving the model something it can correct.
+        return envelope(
+            f"{name} could not run: {exc} is missing or unknown. Check the id, "
+            f"or supply that field, then call {name} again.",
+            {"error": f"missing or unknown {exc}"},
+        )
+    except Exception as exc:  # pragma: no cover - a tool bug, not a model bug
+        return envelope(
+            f"{name} failed: {type(exc).__name__}: {exc}. Nothing was computed, "
+            f"so do not state a figure from this call.",
+            {"error": f"{type(exc).__name__}: {exc}"},
+        )

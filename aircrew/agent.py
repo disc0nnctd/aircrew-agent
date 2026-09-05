@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 
 from . import grounding
@@ -23,6 +26,30 @@ from .tools import OPENAI_TOOLS, Tools, dispatch, renumber
 
 DEFAULT_MODEL = os.environ.get("AIRCREW_MODEL", "gpt-5.6-luna")
 DEFAULT_BASE_URL = os.environ.get("AIRCREW_BASE_URL", "https://api.openai.com/v1")
+DEFAULT_TIMEOUT = float(os.environ.get("AIRCREW_TIMEOUT", "180"))
+
+
+class ModelError(RuntimeError):
+    """The model could not be reached, or answered with something unusable.
+
+    Raised rather than exited: a server thread must be able to turn this into a
+    502 for one turn, not take the process down with it.
+    """
+
+
+def _call_of(tc: dict) -> tuple[str, dict]:
+    """Name and arguments out of one raw tool_call.
+
+    Arguments arrive as a JSON string the model wrote, so it can be malformed
+    or absent. An empty dict is the right recovery: the tool then reports what
+    it needs, and the model reads that and tries again.
+    """
+    fn = tc.get("function") or {}
+    try:
+        args = json.loads(fn.get("arguments") or "{}")
+    except json.JSONDecodeError:
+        args = {}
+    return fn.get("name") or "", args if isinstance(args, dict) else {}
 
 SYSTEM_PROMPT = """\
 You are the Crew Ops Advisor for an airline crew-control desk. The controller \
@@ -117,26 +144,64 @@ class Agent:
             year=dates[0][:4],
         )
         self.messages: list[dict] = [{"role": "system", "content": prompt}]
-        self._client = None
+        self.timeout = DEFAULT_TIMEOUT
+        self.max_retries = 2
         self._base_url = base_url
         self._api_key = api_key or os.environ.get("AIRCREW_API_KEY") or os.environ.get(
             "OPENAI_API_KEY"
         )
 
     # ------------------------------------------------------------------
-    @property
-    def client(self):
-        if self._client is None:
+    # Transport. Any OpenAI-compatible /chat/completions endpoint, over the
+    # standard library, because that is all this loop ever asks for: one
+    # completion with tools, no streaming and no vendor extensions. A package
+    # for that would be a dependency the engine, the CLI and the workspace do
+    # not have, and the README promises clone-and-run.
+    def _post(self, path: str, payload: dict) -> dict:
+        url = f"{self._base_url.rstrip('/')}{path}"
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
+        last: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            req = urllib.request.Request(url, data=body, headers=headers, method="POST")
             try:
-                from openai import OpenAI
-            except ImportError as exc:  # pragma: no cover
-                raise SystemExit(
-                    "The agent needs the `openai` package: pip install openai\n"
-                    "The engine and the workspace both run without it -- see "
-                    "`python -m aircrew.cli` and `python -m aircrew.server`."
-                ) from exc
-            self._client = OpenAI(base_url=self._base_url, api_key=self._api_key)
-        return self._client
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", "replace")[:400]
+                # 4xx other than rate-limiting will not improve on a retry.
+                if exc.code not in (408, 429) and exc.code < 500:
+                    raise ModelError(f"HTTP {exc.code} from the model endpoint: {detail}")
+                last = ModelError(f"HTTP {exc.code} from the model endpoint: {detail}")
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last = ModelError(f"cannot reach the model at {self._base_url}: {exc}")
+            if attempt < self.max_retries:
+                time.sleep(1.5 * (attempt + 1))
+        raise last  # type: ignore[misc]
+
+    def _complete(self, tool_choice: str = "auto") -> dict:
+        """One completion. Returns the raw assistant message as a dict."""
+        data = self._post(
+            "/chat/completions",
+            {
+                "model": self.model,
+                "messages": self.messages,
+                "tools": OPENAI_TOOLS,
+                "tool_choice": tool_choice,
+            },
+        )
+        choices = data.get("choices")
+        if not choices:
+            raise ModelError(
+                f"no choices in the model response: {json.dumps(data)[:300]}"
+            )
+        msg = choices[0].get("message") or {}
+        # Drop nulls before the message goes back into the history: some
+        # gateways reject a replayed `"content": null` alongside tool_calls.
+        return {k: v for k, v in msg.items() if v is not None}
 
     # ------------------------------------------------------------------
     def ask(self, question: str) -> Turn:
@@ -146,24 +211,14 @@ class Agent:
         calls: list[dict] = []
 
         for _ in range(self.max_rounds):
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=self.messages,
-                tools=OPENAI_TOOLS,
-                tool_choice="auto",
-            )
-            msg = resp.choices[0].message
-            self.messages.append(msg.model_dump(exclude_none=True))
+            msg = self._complete("auto")
+            self.messages.append(msg)
 
-            if not msg.tool_calls:
-                return self._finish(msg.content or "", calls, results)
+            if not msg.get("tool_calls"):
+                return self._finish(msg.get("content") or "", calls, results)
 
-            for tc in msg.tool_calls:
-                name = tc.function.name
-                try:
-                    args = json.loads(tc.function.arguments or "{}")
-                except json.JSONDecodeError:
-                    args = {}
+            for tc in msg["tool_calls"]:
+                name, args = _call_of(tc)
                 result = dispatch(self.tools, name, args)
                 calls.append({"name": name, "arguments": args})
                 results.append(result)
@@ -171,7 +226,7 @@ class Agent:
                 self.messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": tc.id,
+                        "tool_call_id": tc.get("id"),
                         "content": json.dumps(result, default=str, ensure_ascii=False),
                     }
                 )
@@ -192,34 +247,24 @@ class Agent:
         # One corrective turn. If the model cannot ground the figure the second
         # time, the honest thing is to say so rather than print it anyway.
         self.messages.append({"role": "user", "content": g.corrective_prompt()})
-        resp = self.client.chat.completions.create(
-            model=self.model, messages=self.messages, tools=OPENAI_TOOLS, tool_choice="auto"
-        )
-        msg = resp.choices[0].message
-        self.messages.append(msg.model_dump(exclude_none=True))
+        msg = self._complete("auto")
+        self.messages.append(msg)
 
-        if msg.tool_calls:
-            for tc in msg.tool_calls:
-                name = tc.function.name
-                try:
-                    args = json.loads(tc.function.arguments or "{}")
-                except json.JSONDecodeError:
-                    args = {}
+        if msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                name, args = _call_of(tc)
                 result = dispatch(self.tools, name, args)
                 calls.append({"name": name, "arguments": args})
                 results.append(result)
                 renumber(results)
                 self.messages.append(
-                    {"role": "tool", "tool_call_id": tc.id,
+                    {"role": "tool", "tool_call_id": tc.get("id"),
                      "content": json.dumps(result, default=str, ensure_ascii=False)}
                 )
-            resp = self.client.chat.completions.create(
-                model=self.model, messages=self.messages, tools=OPENAI_TOOLS, tool_choice="none"
-            )
-            msg = resp.choices[0].message
-            self.messages.append(msg.model_dump(exclude_none=True))
+            msg = self._complete("none")
+            self.messages.append(msg)
 
-        g2 = grounding.check(msg.content or "", results)
+        g2 = grounding.check(msg.get("content") or "", results)
         if g2.ok:
             return Turn(g2.rendered, calls, results, g2, corrected=True)
         return Turn(

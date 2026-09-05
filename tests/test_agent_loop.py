@@ -11,45 +11,44 @@ Run with: python -m tests.test_agent_loop   (or pytest)
 from __future__ import annotations
 
 import json
-import types
 
 from aircrew import grounding
 from aircrew.agent import Agent
 from aircrew.tools import Tools, dispatch
 
 
-# --- a stub OpenAI client -------------------------------------------------
-class _Msg:
-    def __init__(self, content=None, tool_calls=None):
-        self.content = content
-        self.tool_calls = tool_calls
-
-    def model_dump(self, **kw):
-        return {"role": "assistant", "content": self.content}
-
-
-class _Call:
-    def __init__(self, name, args):
-        self.id = "call_1"
-        self.function = types.SimpleNamespace(name=name, arguments=json.dumps(args))
+# --- a stub model endpoint ------------------------------------------------
+# The seam is `_post`, the one HTTP call the agent makes. Faking at that level
+# means the test still exercises the real response parsing, the real history
+# handling and the real tool dispatch, and only the network is pretend.
+def _Msg(content=None, tool_calls=None):
+    """One assistant message, in the wire shape a gateway returns."""
+    msg: dict = {"role": "assistant"}
+    if content is not None:
+        msg["content"] = content
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
+    return msg
 
 
-class _Stub:
-    """Replays a fixed script of assistant messages."""
-
-    def __init__(self, script):
-        self.script = list(script)
-        self.chat = types.SimpleNamespace(completions=self)
-
-    def create(self, **kw):
-        return types.SimpleNamespace(
-            choices=[types.SimpleNamespace(message=self.script.pop(0))]
-        )
+def _Call(name, args, call_id="call_1"):
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(args)},
+    }
 
 
 def _agent(script, tools):
-    a = Agent(tools=tools)
-    a._client = _Stub(script)
+    a = Agent(tools=tools, api_key="test-key")
+    replies = [{"choices": [{"message": m}]} for m in script]
+
+    def _post(path, payload):
+        assert path == "/chat/completions", path
+        assert payload["messages"][0]["role"] == "system"
+        return replies.pop(0)
+
+    a._post = _post
     return a
 
 
@@ -135,6 +134,48 @@ def test_loop_refuses_rather_than_printing_an_ungrounded_figure():
     turn = a.ask("What does cancelling cost?")
     assert "1,250,000" not in turn.reply
     assert "could not ground" in turn.reply.lower()
+
+
+def test_the_loop_runs_without_a_third_party_package():
+    """The engine, the CLI and the workspace have no dependencies, and the
+    chat pane must not quietly add one. A missing package used to raise
+    SystemExit, which is a BaseException, so the server's `except Exception`
+    let it kill the request thread and the browser saw a closed socket."""
+    import sys
+
+    t = Tools()
+    a = _agent([_Msg(content="RULE-DUTY-02 caps duty at 60 hours in any 7 days.")], t)
+    a.ask("what is the duty limit?")
+    assert "openai" not in sys.modules
+
+
+def test_a_tool_that_raises_returns_a_result_the_model_can_act_on():
+    """`dispatch` is called unguarded inside the loop, so anything it raises
+    kills the whole turn. A missing field has to come back as a readable
+    envelope instead, or one blank argument costs the controller the answer."""
+    t = Tools()
+    for name, args in (
+        ("validate", {"claim_kind": "crew_qualified", "crew_id": "C-3305"}),
+        ("validate", {"claim_kind": "assignment_legal", "crew_id": "C-3305"}),
+        ("validate", {"claim_kind": "cheapest_option"}),
+        ("duty_timeline", {"crew_id": "C-3310", "pairing_id": "P-9999"}),
+    ):
+        env = dispatch(t, name, args)
+        assert "error" in env["data"], f"{name} {args} should report, not raise"
+        assert name in env["summary"]
+        assert not env.get("claims"), "a failed call must state nothing"
+
+
+def test_a_blank_optional_argument_does_not_become_a_missing_one():
+    """The model fills optionals with "", `clean_args` strips them, and the
+    tool then indexes a key that is no longer there. Both halves must hold."""
+    t = Tools()
+    blank = dispatch(t, "validate", {"claim_kind": "crew_qualified",
+                                     "crew_id": "C-3305", "aircraft_type": ""})
+    assert "error" in blank["data"]
+    good = dispatch(t, "validate", {"claim_kind": "crew_qualified",
+                                    "crew_id": "C-3305", "aircraft_type": "A320"})
+    assert "CONFIRMED" in good["summary"]
 
 
 # --- the tools ------------------------------------------------------------

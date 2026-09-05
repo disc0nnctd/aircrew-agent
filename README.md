@@ -16,7 +16,7 @@ is enforced by a gate, not by a line in a prompt. See
 | --- | --- |
 | The 38 questions, through the engine | **36 / 36 gradable pass** (2 are rubrics, not values, and are never counted as passes) |
 | The 6 worked scenarios | **19 / 19 checks pass**, including S2's 19 exclusions byte for byte |
-| Agent loop and claim gate | **10 / 10 tests pass** |
+| Agent loop and claim gate | **13 / 13 tests pass** |
 | The 38 questions, *through the agent* (gpt-5.6-luna) | **35 / 36** gradable on the last run, re-scored; one genuine failure (Q27). Three fixes since are unverified — see [docs/ISSUES.md](docs/ISSUES.md). |
 
 ```bash
@@ -26,7 +26,7 @@ python -m tests.test_agent_loop       # the gate and the loop
 
 ## Setup
 
-Python 3.10+. No dependencies for the engine, the CLI or the workspace.
+Python 3.10+. No dependencies, anywhere, including the chat pane.
 
 ```bash
 git clone <this repo> && cd aircrew-agent
@@ -34,10 +34,10 @@ python -m aircrew.scoreboard          # should print 36/36 and 19/19
 python -m aircrew.server              # http://127.0.0.1:8765
 ```
 
-For the chat pane, an OpenAI-compatible endpoint:
+For the chat pane, an OpenAI-compatible endpoint. Still no dependencies: the
+loop posts to `/chat/completions` over the standard library.
 
 ```bash
-pip install openai
 export AIRCREW_API_KEY=...
 export AIRCREW_MODEL=gpt-5.6-luna     # default
 export AIRCREW_BASE_URL=...           # default https://api.openai.com/v1
