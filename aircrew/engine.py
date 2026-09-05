@@ -486,8 +486,8 @@ class Engine:
                     {
                         "crew_id": crew_id,
                         "rule": "RULE-BASE-07",
+                        "rule_text": self.ds.rule_text["RULE-BASE-07"],
                         "reason": f"RULE-BASE-07: based {crew['base']}, pairing departs {dep}"
-                        + ("" if allow_positioning else "")
                         + (" (no deadhead available)" if pos is None else ""),
                     }
                 )
@@ -503,6 +503,7 @@ class Engine:
                     {
                         "crew_id": crew_id,
                         "rule": "RULE-BASE-07",
+                        "rule_text": self.ds.rule_text["RULE-BASE-07"],
                         "reason": window_issue.render(),
                     }
                 )

@@ -304,12 +304,8 @@ function missingNote(env){
 }
 
 /* --- panel builders, one per tool. The tool decides; the model does not. -- */
-const RULE_LABEL = {
-  'RULE-FDP-01':'duty period too long', 'RULE-DUTY-02':'over 60h duty in 7 days',
-  'RULE-FLT-03':'over 100h block in 28 days', 'RULE-REST-04':'less than 12h rest',
-  'RULE-QUAL-05':'not rated on the aircraft', 'RULE-CERT-06':'certification expired',
-  'RULE-BASE-07':'wrong base, or outside the on-call window'
-};
+/* A rule id means nothing on its own, so it always travels with its text. The
+   text comes from rules.json via the tool result, never from a table here. */
 
 function pResolve(env){
   const d = env.data, out = [];
@@ -367,7 +363,7 @@ function pResolve(env){
     Object.keys(groups).sort((a,b) => groups[b].length - groups[a].length).forEach(rule => {
       const g = el('div','excl-group'), h = el('div','h');
       h.appendChild(el('b', null, groups[rule].length + ' × ' + rule));
-      h.appendChild(el('span','why', RULE_LABEL[rule] || ''));
+      h.appendChild(el('span','why', groups[rule][0].rule_text || ''));
       g.appendChild(h);
       const ul = el('ul');
       groups[rule].forEach(x => ul.appendChild(el('li', null, x.crew_id + ' — ' + x.reason)));
@@ -561,13 +557,10 @@ function pProfile(env){
   }
   const out = [p];
   if(d.pairings_this_week && d.pairings_this_week.length){
-    out.push(...pTimeline({data:{crew_id:d.crew_id, min_rest_hours:12, breaches:[],
-      duties:d.pairings_this_week.map((x,i,arr) => ({
-        date:x.date, pairing_id:x.pairing_id, aircraft:x.aircraft, report_utc:x.report_utc,
-        release_utc:x.release_utc, sectors:0, flights:[], fdp_hours:x.fdp_hours,
-        fdp_limit:13, proposed:false,
-        rest_before_hours:null, rest_before_ok:null, overlaps_previous_by_hours:null}))}},
-      'Rostered week'));
+    // Every field on these rows -- the FDP limit and the rest gap included --
+    // was computed by the engine. Nothing here is a display default.
+    out.push(...pTimeline({data:{crew_id:d.crew_id, min_rest_hours:d.min_rest_hours,
+      breaches:[], duties:d.pairings_this_week}}, 'Rostered week'));
   }
   return out;
 }

@@ -107,7 +107,23 @@ class Query:
                 "drivers": risk.get("drivers", []),
             },
             "certifications": self.ds.certs_by_crew.get(crew_id, []),
-            "pairings_this_week": [
+            "min_rest_hours": self.rules.min_rest,
+            "pairings_this_week": self._week_rows(crew_id),
+        }
+
+    def _week_rows(self, crew_id: str) -> list[dict]:
+        """The rostered week, with the real FDP limit and the real rest gap on
+        every row. Nothing on this list is a default: a screen that prints a
+        limit nobody computed is the failure the whole design is against."""
+        duties = self.ds.duties_for(crew_id)
+        rows = []
+        for i, d in enumerate(duties):
+            gap = None
+            if i > 0:
+                gap = round(
+                    (d.report_utc - duties[i - 1].release_utc).total_seconds() / 3600.0, 2
+                )
+            rows.append(
                 {
                     "pairing_id": d.pairing_id,
                     "date": fmt_date(d.on_date),
@@ -115,11 +131,19 @@ class Query:
                     "role": d.role,
                     "report_utc": d.report_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "release_utc": d.release_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "sectors": d.sectors,
+                    "flights": list(d.flight_ids),
                     "fdp_hours": round(d.fdp_hours, 2),
+                    "fdp_limit": self.rules.fdp_limit(d.sectors),
+                    "proposed": False,
+                    "rest_before_hours": gap,
+                    "rest_before_ok": None if gap is None else gap >= self.rules.min_rest - 1e-6,
+                    "overlaps_previous_by_hours": round(abs(gap), 2)
+                    if gap is not None and gap < 0
+                    else None,
                 }
-                for d in self.ds.duties_for(crew_id)
-            ],
-        }
+            )
+        return rows
 
     # ------------------------------------------------------------------
     def crew(
