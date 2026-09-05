@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crew Ops Advisor</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Reading this as: a crew-control desk tool for a controller working at 6 a.m.
+   under time pressure, dense and high-contrast, ENERGY 1 / RHYTHM 2 / MOTION 1.
+
+   Dark by default and only dark. Reason: this desk is staffed overnight and the
+   screen sits in a dim room next to a departure board; a white page at 4 a.m. is
+   the thing operators tape paper over. A half-built theme toggle would be worse
+   than one committed theme, so there is no toggle.
+
+   Palette is two greys, one blue, one amber, plus red for a breach. Reason: the
+   only colour that should catch the eye is the one attached to a decision.
+   Blue marks what the engine computed and is safe; amber marks the figure the
+   controller is about to act on; red marks a rule that stops them. Nothing else
+   is coloured, so those three always read.
+--------------------------------------------------------------------------- */
+:root{
+  --bg:#0e1116;          /* near-black, not pure: pure black smears on OLED */
+  --panel:#161b22;       /* one step up, so panels separate without borders */
+  --panel-2:#1c232c;     /* nested surfaces (table headers, chips) */
+  --line:#2b3441;
+  --ink:#e8edf4;         /* 14.8:1 on --bg */
+  --ink-dim:#9aa8ba;     /* 6.4:1 on --bg, still AA for body text */
+  --ink-faint:#6b7889;   /* 3.6:1 -- labels only, never body text */
+  --accent:#f0b429;      /* the decisive figure. 9.9:1 on --bg */
+  --blue:#5aa9f7;        /* computed, legal, safe. 7.4:1 on --bg */
+  --red:#ff6b6b;         /* a rule that stops you. 6.1:1 on --bg */
+  --green:#5ad19a;       /* legal. 9.2:1 on --bg */
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.45 var(--sans);
+  /* 14px not 16: this screen is a working instrument and density beats comfort */
+}
+/* MOTION 1: nothing moves on its own. The only transition is a 90ms colour
+   change on focus/hover, which is feedback, not animation. */
+*,*::before,*::after{animation:none!important}
+a,button,[tabindex]{transition:background-color .09s,border-color .09s,color .09s}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+/* --- shell ---------------------------------------------------------------
+   Two panes, conversation left at a fixed comfortable measure, workspace right
+   taking the rest. Reason: the evidence is the wide thing (tables of 40
+   candidates); the decision is the narrow thing. */
+.app{display:grid;grid-template-columns:minmax(340px,420px) 1fr;height:100vh}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}
+  .chat{border-right:none;border-bottom:1px solid var(--line);max-height:60vh}
+}
+
+/* --- header -------------------------------------------------------------- */
+header{
+  display:flex;align-items:baseline;gap:10px;
+  padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);
+}
+header h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.01em}
+header .sub{font-size:12px;color:var(--ink-faint)}
+header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:var(--mono)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px}
+.dot.off{background:var(--ink-faint)}
+
+/* --- chat ---------------------------------------------------------------- */
+.chat{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel);min-height:0}
+.log{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.msg{max-width:100%}
+.msg .who{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:4px}
+.msg.you .body{background:var(--panel-2);border-left:2px solid var(--blue)}
+.msg .body{padding:9px 11px;border-radius:4px;background:#12171e;border-left:2px solid var(--line);white-space:pre-wrap}
+.msg.note .body{border-left-color:var(--accent);color:var(--ink-dim);font-size:13px}
+.msg.err .body{border-left-color:var(--red);color:var(--red)}
+.trace{margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.trace span{display:inline-block;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:3px;padding:1px 5px;margin:2px 4px 0 0}
+.composer{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;background:var(--panel)}
+.composer textarea{
+  flex:1;resize:none;min-height:44px;max-height:140px;padding:9px 10px;
+  background:#0b0f14;color:var(--ink);border:1px solid var(--line);border-radius:4px;
+  font:14px/1.4 var(--sans);
+}
+.composer button{
+  min-height:44px;min-width:64px;padding:0 14px;border:1px solid var(--line);border-radius:4px;
+  background:var(--panel-2);color:var(--ink);font:600 13px var(--sans);cursor:pointer;
+}
+.composer button:hover:not(:disabled){background:#243040;border-color:var(--blue)}
+.composer button:disabled{opacity:.5;cursor:not-allowed}
+.starters{padding:0 12px 10px;display:flex;flex-wrap:wrap;gap:6px}
+.starters button{
+  font:12px var(--sans);color:var(--ink-dim);background:transparent;
+  border:1px solid var(--line);border-radius:3px;padding:5px 8px;cursor:pointer;text-align:left;
+  min-height:32px;
+}
+.starters button:hover{color:var(--ink);border-color:var(--blue)}
+
+/* --- workspace ----------------------------------------------------------- */
+.work{overflow-y:auto;padding:16px 18px 40px;min-height:0}
+.work-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.work-head h2{margin:0;font-size:13px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-dim)}
+.work-head .hint{font-size:12px;color:var(--ink-faint)}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:5px;margin-bottom:14px;overflow:hidden}
+.panel > h3{
+  margin:0;padding:9px 12px;font-size:12px;font-weight:650;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--ink-dim);background:var(--panel-2);
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;
+}
+.panel > h3 .of{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint);text-transform:none;letter-spacing:0}
+.panel .pad{padding:12px}
+.panel .note{padding:8px 12px;font-size:12px;color:var(--ink-faint);border-top:1px solid var(--line);background:#12171e}
+
+/* RHYTHM 2: a ranked plan, a timeline and a comparison are genuinely different
+   shapes, so they get different treatments -- table, rail, card grid -- while
+   sharing one panel chrome, type scale and palette. */
+
+/* tables: the deciding field comes early, never Name/Status/Date/Actions */
+.tw{overflow-x:auto}                     /* wide content scrolls inside itself */
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);
+   font-weight:600;background:var(--panel-2);position:sticky;top:0}
+tbody tr:hover{background:#1a212a}
+tbody tr.pick{background:#1d2430}
+tbody tr.pick td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+td.cost{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600}
+tr.dim td{color:var(--ink-dim)}
+.rowbtn{background:none;border:none;color:var(--blue);font:inherit;cursor:pointer;padding:0;text-align:left}
+.rowbtn:hover{text-decoration:underline}
+
+.tag{display:inline-block;font:600 11px var(--mono);padding:1px 6px;border-radius:3px;
+     border:1px solid;letter-spacing:.02em}
+.tag.legal{color:var(--green);border-color:#2c5c46;background:#12241c}
+.tag.illegal{color:var(--red);border-color:#5c2c2c;background:#241212}
+.tag.info{color:var(--blue);border-color:#28455f;background:#111d28}
+.tag.warn{color:var(--accent);border-color:#5c4a17;background:#241d0c}
+
+/* the headline figure: one per panel, never a row of invented stats */
+.headline{display:flex;flex-wrap:wrap;gap:22px;padding:12px}
+.headline .fig{min-width:110px}
+.headline .fig .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
+.headline .fig .v{font:600 20px/1.2 var(--mono);font-variant-numeric:tabular-nums;margin-top:2px}
+.headline .fig .v.accent{color:var(--accent)}
+.headline .fig .v.bad{color:var(--red)}
+.headline .fig .v.good{color:var(--green)}
+.headline .fig .s{font-size:12px;color:var(--ink-dim);margin-top:2px}
+
+/* duty timeline: a rail per day, with the rest gap between days called out.
+   Reason: "qualified, based, free and still illegal" is a statement about the
+   gaps, so the gaps get the emphasis, not the duties. */
+.rail{padding:6px 12px 12px}
+.day{display:grid;grid-template-columns:78px 1fr;gap:10px;padding:7px 0;align-items:start}
+.day .d{font-family:var(--mono);font-size:12px;color:var(--ink-dim);padding-top:2px}
+.day .bar{border-left:3px solid var(--blue);padding:2px 0 2px 9px}
+.day.proposed .bar{border-left-color:var(--accent)}
+.day.breach .bar{border-left-color:var(--red)}
+.day .t{font-family:var(--mono);font-size:12px}
+.day .m{font-size:12px;color:var(--ink-dim);margin-top:2px}
+.gap{display:grid;grid-template-columns:78px 1fr;gap:10px;font-size:12px}
+.gap .g{grid-column:2;color:var(--ink-dim);border-left:1px dashed var(--line);padding:3px 0 3px 9px;margin-left:1px}
+.gap.short .g{color:var(--red);border-left-color:var(--red)}
+
+/* exclusions: visible and grouped, not collapsed at the bottom. They are what a
+   controller most wants to challenge. */
+.excl-group{border-top:1px solid var(--line)}
+.excl-group:first-child{border-top:none}
+.excl-group > .h{padding:7px 12px;background:#12171e;font-size:12px;display:flex;gap:8px;align-items:baseline}
+.excl-group > .h b{font-weight:650}
+.excl-group > .h .why{color:var(--ink-dim)}
+.excl-group ul{margin:0;padding:6px 12px 10px 28px;font-size:12px;color:var(--ink-dim)}
+.excl-group li{margin:3px 0;font-family:var(--mono);font-size:11.5px}
+
+/* states are designed, not afterthoughts */
+.state{padding:26px 18px;text-align:center;color:var(--ink-dim)}
+.state h4{margin:0 0 5px;font-size:14px;color:var(--ink)}
+.state p{margin:0;font-size:13px;max-width:46ch;margin-inline:auto}
+.state.err h4{color:var(--red)}
+.claims{padding:10px 12px;border-top:1px solid var(--line);background:#12171e}
+.claims .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:5px}
+.claims li{font-size:12px;color:var(--ink-dim);margin:2px 0;list-style:none}
+.claims li code{font-family:var(--mono);font-size:11px;color:var(--blue);margin-right:6px}
+.claims ul{margin:0;padding:0}
+pre.draft{margin:0;padding:12px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="chat">
+    <header>
+      <h1>Crew Ops Advisor</h1>
+      <span class="sub">DX network</span>
+      <span class="status" id="status"><span class="dot off"></span>checking…</span>
+    </header>
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="starters" id="starters"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Captain C-1042 is sick for P-2291 — what should I do?"
+        aria-label="Ask the crew ops advisor"></textarea>
+      <button type="submit" id="send">Send</button>
+    </form>
+  </section>
+
+  <section class="work" id="work" aria-label="Operational workspace">
+    <div class="work-head">
+      <h2>Workspace</h2>
+      <span class="hint" id="workhint">Every figure here was computed by the rules engine.</span>
+    </div>
+    <div id="panels"></div>
+  </section>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   INVARIANTS
+
+   1. Panels render only from a tool result's `data`. Nothing is parsed out of
+      the model's prose, so the chat and the workspace cannot disagree.
+   2. Layout is deterministic: the tool that ran decides the panel, never the
+      model. The same question type always produces the same screen shape.
+   3. Drill-downs call /api/tool directly, so the workspace works with the model
+      switched off.
+   4. A turn that draws no panel leaves the workspace alone. Clearing before
+      knowing there is a replacement blanks the plan someone is reading.
+--------------------------------------------------------------------------- */
+const $ = s => document.querySelector(s);
+const el = (t, c, txt) => { const n = document.createElement(t); if(c) n.className = c;
+  if(txt !== undefined) n.textContent = txt; return n; };
+const esc = s => String(s ?? '');
+const inr = n => 'INR ' + Number(n).toLocaleString('en-IN');
+const hhmm = iso => typeof iso === 'string' && iso.length >= 16 ? iso.slice(11,16)+'Z' : esc(iso);
+const dayOf = iso => typeof iso === 'string' ? iso.slice(0,10) : '';
+
+let modelReady = false;
+
+/* --- api ---------------------------------------------------------------- */
+async function api(path, body){
+  const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body:JSON.stringify(body)});
+  const j = await r.json().catch(() => ({error:'bad response'}));
+  if(!r.ok) throw Object.assign(new Error(j.error || 'request failed'), {detail:j.detail, hint:j.hint});
+  return j;
+}
+const runTool = (name, args) => api('/api/tool', {name, arguments: args || {}});
+
+/* --- chat log ----------------------------------------------------------- */
+function say(who, text, cls){
+  const m = el('div', 'msg ' + (cls || ''));
+  m.appendChild(el('div', 'who', who));
+  m.appendChild(el('div', 'body', text));
+  $('#log').appendChild(m);
+  $('#log').scrollTop = $('#log').scrollHeight;
+  return m;
+}
+function trace(m, calls){
+  if(!calls || !calls.length) return;
+  const t = el('div','trace');
+  t.appendChild(document.createTextNode('computed by '));
+  calls.forEach(c => t.appendChild(el('span', null, c.name)));
+  m.appendChild(t);
+}
+
+/* --- workspace ---------------------------------------------------------- */
+function setPanels(nodes){
+  // Invariant 4: only replace when there is something to replace with.
+  if(!nodes || !nodes.length) return;
+  const host = $('#panels'); host.textContent = '';
+  nodes.forEach(n => host.appendChild(n));
+  $('#work').scrollTop = 0;
+}
+function panel(title, count){
+  const p = el('div','panel'); const h = el('h3', null, title);
+  if(count) h.appendChild(el('span','of', count));
+  p.appendChild(h); return p;
+}
+function stateBlock(kind, head, body){
+  const s = el('div','state ' + kind);
+  s.appendChild(el('h4', null, head));
+  s.appendChild(el('p', null, body));
+  return s;
+}
+function claimList(env){
+  if(!env.claims || !env.claims.length) return null;
+  const w = el('div','claims');
+  w.appendChild(el('div','k','Established by this result'));
+  const ul = el('ul');
+  env.claims.slice(0, 8).forEach(c => {
+    const li = el('li'); const code = el('code', null, c.id);
+    li.appendChild(code); li.appendChild(document.createTextNode(c.text)); ul.appendChild(li);
+  });
+  w.appendChild(ul); return w;
+}
+function missingNote(env){
+  if(!env.missing || !env.missing.length) return null;
+  return el('div','note', 'Not established here: ' + env.missing.join('; '));
+}
+
+/* --- panel builders, one per tool. The tool decides; the model does not. -- */
+const RULE_LABEL = {
+  'RULE-FDP-01':'duty period too long', 'RULE-DUTY-02':'over 60h duty in 7 days',
+  'RULE-FLT-03':'over 100h block in 28 days', 'RULE-REST-04':'less than 12h rest',
+  'RULE-QUAL-05':'not rated on the aircraft', 'RULE-CERT-06':'certification expired',
+  'RULE-BASE-07':'wrong base, or outside the on-call window'
+};
+
+function pResolve(env){
+  const d = env.data, out = [];
+  const p = panel('Ranked cover — ' + esc(d.pairing_id) + ' ' + esc(d.role),
+                  (d.option_count || d.options.length) + ' options');
+  const head = el('div','headline');
+  const fig = (k,v,s,cls) => { const f = el('div','fig');
+    f.appendChild(el('div','k',k)); const val = el('div','v ' + (cls||''), v);
+    f.appendChild(val); if(s) f.appendChild(el('div','s',s)); head.appendChild(f); };
+  const rec = d.recommended;
+  if(rec) fig('Recommended', rec.crew_id || 'Cancel', rec.action, 'accent');
+  if(rec) fig('Cost', inr(rec.cost_inr), rec.delay_hours ? rec.delay_hours + 'h delay' : 'no delay', 'accent');
+  fig('Legal candidates', d.legal_candidate_count, 'of ' + (d.legal_candidate_count + d.excluded_count) + ' considered');
+  fig('Excluded', d.excluded_count, d.exclusions_orientation);
+  p.appendChild(head);
+
+  if(!d.options.length){
+    p.appendChild(stateBlock('', 'No candidates match',
+      'Nobody holds the rating, base and legality for this pairing. Widen the base filter to allow positioning, or check the on-call windows for the report time.'));
+  } else {
+    // Deciding field first: what it costs and whether it is legal, then who.
+    const tw = el('div','tw'), t = el('table');
+    t.innerHTML = '<thead><tr><th>#</th><th>Cost</th><th>Legal</th><th>Action</th>' +
+                  '<th>Base</th><th>Delay</th><th></th></tr></thead>';
+    const tb = el('tbody');
+    d.options.forEach(o => {
+      const tr = el('tr'); if(o.rank === 1) tr.className = 'pick';
+      if(!o.crew_id) tr.className += ' dim';
+      tr.appendChild(el('td','num', o.rank));
+      tr.appendChild(el('td','cost', inr(o.cost_inr)));
+      const tg = el('td'); const tag = el('span','tag ' + (o.legal ? 'legal':'illegal'), o.legal ? 'legal':'illegal');
+      tg.appendChild(tag); tr.appendChild(tg);
+      tr.appendChild(el('td', null, o.action));
+      tr.appendChild(el('td', null, o.base || '—'));
+      tr.appendChild(el('td','num', o.delay_hours ? o.delay_hours + 'h' : '—'));
+      const act = el('td');
+      if(o.crew_id){
+        const b = el('button','rowbtn','why');   // drill-down: calls the tool itself
+        b.type = 'button';
+        b.addEventListener('click', () => drill(o.crew_id, d.pairing_id, d.from_date));
+        act.appendChild(b);
+      }
+      tr.appendChild(act); tb.appendChild(tr);
+    });
+    t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
+  }
+  const mn = missingNote(env); if(mn) p.appendChild(mn);
+  const cl = claimList(env); if(cl) p.appendChild(cl);
+  out.push(p);
+
+  if(d.exclusions && d.exclusions.length){
+    const ep = panel('Why the others were ruled out', d.exclusions.length + ' excluded');
+    const groups = {};
+    d.exclusions.forEach(x => (groups[x.rule] = groups[x.rule] || []).push(x));
+    Object.keys(groups).sort((a,b) => groups[b].length - groups[a].length).forEach(rule => {
+      const g = el('div','excl-group'), h = el('div','h');
+      h.appendChild(el('b', null, groups[rule].length + ' × ' + rule));
+      h.appendChild(el('span','why', RULE_LABEL[rule] || ''));
+      g.appendChild(h);
+      const ul = el('ul');
+      groups[rule].forEach(x => ul.appendChild(el('li', null, x.crew_id + ' — ' + x.reason)));
+      g.appendChild(ul); ep.appendChild(g);
+    });
+    out.push(ep);
+  }
+  return out;
+}
+
+function pTimeline(env, title){
+  const d = env.data;
+  const p = panel(title || ('Duty week — ' + esc(d.crew_id)), d.duties.length + ' duty days');
+  const rail = el('div','rail');
+  d.duties.forEach((row, i) => {
+    if(i > 0 && row.rest_before_hours !== null){
+      const g = el('div','gap' + (row.rest_before_ok === false ? ' short' : ''));
+      const txt = row.overlaps_previous_by_hours !== null && row.overlaps_previous_by_hours !== undefined
+        ? 'overlaps the previous duty by ' + row.overlaps_previous_by_hours + 'h — cannot be worked'
+        : row.rest_before_hours + 'h rest' + (row.rest_before_ok === false
+            ? ' — under the ' + d.min_rest_hours + 'h minimum' : '');
+      g.appendChild(el('div','g', txt));
+      rail.appendChild(g);
+    }
+    const over = row.fdp_hours > row.fdp_limit;
+    const day = el('div','day' + (row.proposed ? ' proposed' : '') + (over ? ' breach' : ''));
+    day.appendChild(el('div','d', row.date));
+    const bar = el('div','bar');
+    bar.appendChild(el('div','t', hhmm(row.report_utc) + ' → ' + hhmm(row.release_utc) +
+      '   ' + row.fdp_hours + 'h / ' + row.fdp_limit + 'h limit'));
+    bar.appendChild(el('div','m', (row.proposed ? 'PROPOSED COVER · ' : '') + row.pairing_id +
+      ' · ' + row.aircraft + ' · ' + row.sectors + ' sectors · ' + row.flights.join(', ')));
+    day.appendChild(bar); rail.appendChild(day);
+  });
+  p.appendChild(rail);
+  if(d.breaches && d.breaches.length){
+    const b = el('div','pad');
+    d.breaches.forEach(x => {
+      const line = el('div'); line.style.marginBottom = '5px';
+      const tag = el('span','tag illegal', x.rule); line.appendChild(tag);
+      line.appendChild(document.createTextNode(' ' + x.message));
+      if(x.text){ const s = el('div'); s.style.cssText='font-size:12px;color:var(--ink-faint);margin-left:2px';
+        s.textContent = x.text; line.appendChild(s); }
+      b.appendChild(line);
+    });
+    p.appendChild(b);
+  }
+  return [p];
+}
+
+function pCheck(env){
+  const d = env.data, out = [];
+  const p = panel('Assignment check — ' + esc(d.crew_id) + ' on ' + esc(d.pairing_id));
+  const head = el('div','headline');
+  const f1 = el('div','fig'); f1.appendChild(el('div','k','Breaches a rule?'));
+  f1.appendChild(el('div','v ' + (d.rules.legal ? 'good':'bad'), d.rules.legal ? 'No' : 'Yes'));
+  f1.appendChild(el('div','s', d.rules.legal ? 'all seven rules pass' : d.rules.issues.join('; ')));
+  head.appendChild(f1);
+  const f2 = el('div','fig'); f2.appendChild(el('div','k','Can we call them out?'));
+  f2.appendChild(el('div','v ' + (d.callable.callable ? 'good':'bad'), d.callable.callable ? 'Yes' : 'No'));
+  f2.appendChild(el('div','s', d.callable.reason || (d.callable.is_reserve ? 'inside the on-call window'
+    : 'not a reserve — this would be a day-off callout')));
+  head.appendChild(f2);
+  const f3 = el('div','fig'); f3.appendChild(el('div','k','Reachability'));
+  f3.appendChild(el('div','v', d.callable.reachability_minutes + ' min'));
+  f3.appendChild(el('div','s','to report after callout'));
+  head.appendChild(f3);
+  p.appendChild(head);
+  p.appendChild(el('div','note','These are two different questions with two different answers. ' +
+    'Read the one you asked.'));
+  const cl = claimList(env); if(cl) p.appendChild(cl);
+  out.push(p);
+  if(d.timeline) out.push(...pTimeline({data:d.timeline}, 'Duty week with the proposed cover inserted'));
+  return out;
+}
+
+function pTrace(env){
+  const d = env.data;
+  const p = panel('Uncovered — ' + esc(d.crew_id) + ' off ' + esc(d.pairing_id),
+                  d.total_flights + ' flights');
+  const head = el('div','headline');
+  [['Role', d.role_on_pairing, d.aircraft],
+   ['Day 1 flights', d.day1.length, d.day1.join(', ')],
+   ['Day 1 passengers', d.passengers_day1, 'per day, not the pairing total']]
+    .forEach(([k,v,s]) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
+      f.appendChild(el('div','v accent', v)); f.appendChild(el('div','s',s)); head.appendChild(f); });
+  p.appendChild(head);
+  const tw = el('div','tw'), t = el('table');
+  t.innerHTML = '<thead><tr><th>Date</th><th>Passengers</th><th>Report</th><th>Release</th><th>Flights</th></tr></thead>';
+  const tb = el('tbody');
+  d.by_day.forEach(day => {
+    const tr = el('tr');
+    tr.appendChild(el('td', null, day.date));
+    tr.appendChild(el('td','num', day.passengers));
+    tr.appendChild(el('td','num', hhmm(day.report_utc)));
+    tr.appendChild(el('td','num', hhmm(day.release_utc)));
+    tr.appendChild(el('td', null, day.flights.join(', ')));
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
+  const mn = missingNote(env); if(mn) p.appendChild(mn);
+  return [p];
+}
+
+function pDelay(env){
+  const d = env.data;
+  const p = panel('Delay — ' + esc(d.aircraft) + ' ' + esc(d.date) + ' (' + esc(d.mode) + ')');
+  const head = el('div','headline');
+  const fig = (k,v,s,cls) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
+    f.appendChild(el('div','v ' + (cls||''), v)); if(s) f.appendChild(el('div','s',s)); head.appendChild(f); };
+  fig('Delay', d.delay_hours + 'h', d.mode === 'technical' ? 'report held, duty grows' : 'both edges move');
+  fig('FDP after delay', d.fdp_after_delay + 'h', 'was ' + d.fdp_before + 'h', d.breach ? 'bad' : 'good');
+  fig('Limit', d.fdp_limit + 'h', d.sectors + ' sectors');
+  fig('Breach', d.breach ? 'Yes' : 'No', d.breach ? 'RULE-FDP-01' : 'crew stay legal', d.breach ? 'bad':'good');
+  p.appendChild(head);
+  if(d.breach_detail) p.appendChild(el('div','note', d.breach_detail));
+  const out = [p];
+  if(d.options && d.options.length){
+    const op = panel('Recovery options', d.options.length + ' options');
+    const tw = el('div','tw'), t = el('table');
+    t.innerHTML = '<thead><tr><th>#</th><th>Cost</th><th>Action</th><th>Why</th></tr></thead>';
+    const tb = el('tbody');
+    d.options.forEach(o => {
+      const tr = el('tr'); if(o.rank === 1) tr.className = 'pick';
+      tr.appendChild(el('td','num', o.rank));
+      tr.appendChild(el('td','cost', inr(o.cost_inr)));
+      tr.appendChild(el('td', null, o.action));
+      tr.appendChild(el('td', null, o.reasoning));
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); tw.appendChild(t); op.appendChild(tw); out.push(op);
+  }
+  return out;
+}
+
+function pClosure(env){
+  const d = env.data;
+  const p = panel('Station closure — ' + esc(d.station) + ' ' + esc(d.date),
+                  d.affected_flight_ids.length + ' flights');
+  const head = el('div','headline');
+  [['Window', d.window_utc, 'reopens ' + d.reopen_plus_30 + ' incl. 30 min'],
+   ['Flights affected', d.affected_flight_ids.length, 'arrivals count too'],
+   ['Passengers', d.passengers_at_risk, 'across affected legs'],
+   ['Need re-crew', (d.flights_needing_recrew || []).length, 'delay pushes crew past FDP']]
+   .forEach(([k,v,s]) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
+     f.appendChild(el('div','v', v)); f.appendChild(el('div','s',s)); head.appendChild(f); });
+  p.appendChild(head);
+  const rows = d.per_flight_assessment || [];
+  if(rows.length){
+    const tw = el('div','tw'), t = el('table');
+    t.innerHTML = '<thead><tr><th>Min delay</th><th>Crew FDP</th><th>Limit</th><th>Flight</th>' +
+                  '<th>Pairing</th><th>Action</th></tr></thead>';
+    const tb = el('tbody');
+    rows.forEach(r => {
+      const bad = r.action.indexOf('exceeds') >= 0;
+      const tr = el('tr'); if(!bad) tr.className = 'dim';
+      tr.appendChild(el('td','num', r.min_delay_hours + 'h'));
+      const fd = el('td','num', r.crew_fdp_after_delay + 'h');
+      if(bad) fd.style.color = 'var(--red)';
+      tr.appendChild(fd);
+      tr.appendChild(el('td','num', r.fdp_limit + 'h'));
+      tr.appendChild(el('td', null, r.flight_id));
+      tr.appendChild(el('td', null, r.pairing_id || '—'));
+      tr.appendChild(el('td', null, r.action));
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
+  }
+  return [p];
+}
+
+function pProfile(env){
+  const d = env.data;
+  const p = panel('Crew — ' + esc(d.crew_id) + ' ' + esc(d.name));
+  const head = el('div','headline');
+  const over = d.duty_headroom_7d <= 0;
+  [['Rank', d.rank, d.base + ' base'],
+   ['Ratings', d.ratings.join(', '), d.status],
+   ['Duty 7d', d.duty_hours_7d + 'h', 'to ' + d.as_of + ', limit ' + d.duty_limit_7d + 'h'],
+   ['Headroom', d.duty_headroom_7d + 'h', over ? 'at or over the limit' : 'under RULE-DUTY-02', over ? 'bad':'accent'],
+   ['Block 28d', d.flight_hours_28d + 'h', 'limit ' + d.flight_limit_28d + 'h'],
+   ['Reachability', d.reachability_minutes + ' min', d.reserve.is_reserve
+      ? 'reserve ' + d.reserve.oncall_window_utc.start + '–' + d.reserve.oncall_window_utc.end + 'Z'
+      : 'not on reserve']]
+   .forEach(([k,v,s,cls]) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
+     f.appendChild(el('div','v ' + (cls||''), v)); f.appendChild(el('div','s',s)); head.appendChild(f); });
+  p.appendChild(head);
+  if(d.risk && d.risk.disruption_risk_score !== null && d.risk.disruption_risk_score !== undefined){
+    p.appendChild(el('div','note','Disruption risk ' + d.risk.disruption_risk_score +
+      ' — ' + (d.risk.drivers || []).join('; ') + '. A provided signal, never a legality rule.'));
+  }
+  const out = [p];
+  if(d.pairings_this_week && d.pairings_this_week.length){
+    out.push(...pTimeline({data:{crew_id:d.crew_id, min_rest_hours:12, breaches:[],
+      duties:d.pairings_this_week.map((x,i,arr) => ({
+        date:x.date, pairing_id:x.pairing_id, aircraft:x.aircraft, report_utc:x.report_utc,
+        release_utc:x.release_utc, sectors:0, flights:[], fdp_hours:x.fdp_hours,
+        fdp_limit:13, proposed:false,
+        rest_before_hours:null, rest_before_ok:null, overlaps_previous_by_hours:null}))}},
+      'Rostered week'));
+  }
+  return out;
+}
+
+function pNotify(env){
+  const d = env.data;
+  const p = panel('Callout draft — ' + esc(d.crew_id) + ' on ' + esc(d.pairing_id));
+  p.appendChild(Object.assign(el('pre','draft'), {textContent: d.text}));
+  const mn = missingNote(env); if(mn) p.appendChild(mn);
+  return [p];
+}
+
+function pTable(env, title){
+  const d = env.data;
+  const rows = d.flights || d.crew || d.reserves || d.certifications || d.pairings || null;
+  if(!rows || !rows.length){
+    const p = panel(title || 'Lookup');
+    p.appendChild(stateBlock('', 'Nothing matched',
+      'The filters returned no rows. Check the date, or drop one filter and look again.'));
+    return [p];
+  }
+  const cols = Object.keys(rows[0]).filter(k => typeof rows[0][k] !== 'object' || Array.isArray(rows[0][k]));
+  const p = panel(title || 'Lookup', rows.length + ' rows');
+  const tw = el('div','tw'), t = el('table');
+  const thead = el('thead'), htr = el('tr');
+  cols.forEach(c => htr.appendChild(el('th', null, c.replace(/_/g,' '))));
+  thead.appendChild(htr); t.appendChild(thead);
+  const tb = el('tbody');
+  rows.slice(0, 120).forEach(r => {
+    const tr = el('tr');
+    cols.forEach(c => {
+      const v = r[c];
+      const td = el('td', typeof v === 'number' ? 'num' : null,
+                    Array.isArray(v) ? v.join(', ') : esc(v));
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
+  if(rows.length > 120) p.appendChild(el('div','note','Showing the first 120 of ' + rows.length + ' rows.'));
+  const cl = claimList(env); if(cl) p.appendChild(cl);
+  return [p];
+}
+
+function pValidate(env){
+  const d = env.data;
+  const p = panel('Claim check');
+  const head = el('div','headline');
+  const f = el('div','fig');
+  f.appendChild(el('div','k','Verdict'));
+  f.appendChild(el('div','v ' + (d.verdict ? 'good':'bad'), d.verdict ? 'Confirmed' : 'Refuted'));
+  f.appendChild(el('div','s', env.summary));
+  head.appendChild(f); p.appendChild(head);
+  const cl = claimList(env); if(cl) p.appendChild(cl);
+  return [p];
+}
+
+/* Deterministic routing: tool name -> panel. The model has no say. */
+function panelsFor(name, args, env){
+  if(env.data && env.data.error) {
+    const p = panel('Could not compute');
+    p.appendChild(stateBlock('err', 'The engine rejected that request', env.summary));
+    return [p];
+  }
+  switch(name){
+    case 'resolve_cover':       return env.data.per_vacancy ? pJoint(env) : pResolve(env);
+    case 'check_assignment':    return pCheck(env);
+    case 'duty_timeline':       return pTimeline(env);
+    case 'trace_disruption':    return pTrace(env);
+    case 'crew_profile':        return pProfile(env);
+    case 'draft_notification':  return pNotify(env);
+    case 'validate':            return pValidate(env);
+    case 'simulate_disruption':
+      if(args && args.kind === 'closure') return pClosure(env);
+      if(args && args.kind === 'cancellation') return pTable(env, 'Cancellation cost');
+      return pDelay(env);
+    case 'lookup':              return pTable(env, 'Lookup — ' + (args && args.entity || ''));
+    default:                    return [];
+  }
+}
+
+function pJoint(env){
+  const d = env.data, out = [];
+  const p = panel('Joint plan — ' + d.vacancies.length + ' vacancies', d.plan_count + ' legal plans');
+  const head = el('div','headline');
+  const fig = (k,v,s,cls) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
+    f.appendChild(el('div','v ' + (cls||''), v)); if(s) f.appendChild(el('div','s',s)); head.appendChild(f); };
+  fig('Total cost', inr(d.total_cost_inr), 'cheapest of ' + d.plan_count + ' plans', 'accent');
+  if(d.tie_count > 1) fig('Tied at that cost', d.tie_count,
+    'cost does not decide — choose on reachability', 'accent');
+  p.appendChild(head);
+  const tw = el('div','tw'), t = el('table');
+  t.innerHTML = '<thead><tr><th>Cost</th><th>Pairing</th><th>Action</th></tr></thead>';
+  const tb = el('tbody');
+  d.optimal.assignments.forEach((a, i) => {
+    const tr = el('tr'); tr.className = 'pick';
+    tr.appendChild(el('td','cost', inr(a.cost_inr)));
+    tr.appendChild(el('td', null, d.vacancies[i].pairing_id));
+    tr.appendChild(el('td', null, a.action));
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
+  if(d.tie_count > 1) p.appendChild(el('div','note',
+    d.tie_count + ' plans cost exactly the same. When cost cannot separate the options the decision ' +
+    'is yours, and it turns on reachability.'));
+  const cl = claimList(env); if(cl) p.appendChild(cl);
+  out.push(p);
+  (d.per_vacancy || []).forEach(v => out.push(...pResolve({data:v, claims:[], missing:[]})));
+  return out;
+}
+
+/* --- drill-down: calls the tool endpoint directly, model or no model ----- */
+async function drill(crew_id, pairing_id, from_date){
+  try{
+    const env = await runTool('check_assignment', {crew_id, pairing_id, from_date});
+    setPanels(panelsFor('check_assignment', {}, env));
+  }catch(e){
+    setPanels([(() => { const p = panel('Could not load');
+      p.appendChild(stateBlock('err','The engine did not answer', e.message)); return p; })()]);
+  }
+}
+
+/* --- starters run the engine directly, so the demo works with no model --- */
+const STARTERS = [
+  ['Captain C-1042 is sick for P-2291 — what should I do?',
+   'resolve_cover', {pairing_id:'P-2291', vacated_by:'C-1042', limit:8}],
+  ['Which flights go uncrewed if C-1042 drops out?',
+   'trace_disruption', {crew_id:'C-1042', pairing_id:'P-2291'}],
+  ['Why was C-5837 ruled out?',
+   'check_assignment', {crew_id:'C-5837', pairing_id:'P-2291'}],
+  ['Both A320 captains are sick on 18 Sep',
+   'resolve_cover', {vacancies:[{pairing_id:'P-2205', role:'Captain', label:'assign_dxa'},
+                                {pairing_id:'P-2212', role:'Captain', label:'assign_dxb'}]}],
+  ['VT-DXA is 90 minutes late on 16 Sep',
+   'simulate_disruption', {kind:'delay', aircraft:'VT-DXA', on_date:'2026-09-16',
+                           delay_hours:1.5, mode:'technical'}],
+  ['BLR closes 08:00–14:00Z on 17 Sep',
+   'simulate_disruption', {kind:'closure', station:'BLR', on_date:'2026-09-17',
+                           start_utc:'08:00', end_utc:'14:00'}]
+];
+
+function buildStarters(){
+  const host = $('#starters');
+  STARTERS.forEach(([label, tool, args]) => {
+    const b = el('button', null, label); b.type = 'button';
+    b.addEventListener('click', async () => {
+      if(modelReady){ $('#input').value = label; $('#composer').requestSubmit(); return; }
+      const m = say('Controller', label, 'you');
+      try{
+        const env = await runTool(tool, args);
+        setPanels(panelsFor(tool, args, env));
+        const n = say('Engine', env.summary, 'note');
+        trace(n, [{name: tool}]);
+      }catch(e){ say('Engine', e.message, 'err'); }
+    });
+    host.appendChild(b);
+  });
+}
+
+/* --- chat submit -------------------------------------------------------- */
+$('#composer').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const q = $('#input').value.trim(); if(!q) return;
+  $('#input').value = ''; $('#send').disabled = true;
+  say('Controller', q, 'you');
+  const pending = say('Advisor', 'Working…', 'note');
+  try{
+    const r = await api('/api/chat', {message: q});
+    pending.remove();
+    const m = say('Advisor', r.reply);
+    trace(m, r.tool_calls);
+    if(r.corrected) say('System', 'The first reply contained a figure no tool had computed, ' +
+      'so it was sent back for correction.', 'note');
+    // Invariant 1 and 2: draw from the tool results, in the order the agent
+    // committed to them -- the last result is the one it answered from.
+    const drawable = (r.tool_results || []).map((env, i) => ({env, call: r.tool_calls[i]}))
+      .filter(x => x.call && x.env && x.env.data && !x.env.data.error);
+    if(drawable.length){
+      const last = drawable[drawable.length - 1];
+      setPanels(panelsFor(last.call.name, last.call.arguments, last.env));
+    }
+  }catch(e){
+    pending.remove();
+    say('Advisor', e.message + (e.hint ? ' — ' + e.hint : ''), 'err');
+  }finally{
+    $('#send').disabled = false; $('#input').focus();
+  }
+});
+$('#input').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); $('#composer').requestSubmit(); }
+  if(e.key === 'Escape'){ $('#input').value = ''; }
+});
+
+/* --- boot --------------------------------------------------------------- */
+(async () => {
+  buildStarters();
+  $('#panels').appendChild((() => {
+    const p = panel('Nothing loaded yet');
+    p.appendChild(stateBlock('', 'Pick a disruption, or describe one',
+      'The workspace fills with whatever the engine computes. Every figure it shows was ' +
+      'produced by the rules engine, never by the language model.'));
+    return p;
+  })());
+  try{
+    const h = await (await fetch('/api/health')).json();
+    modelReady = !!h.model;
+    $('#status').innerHTML = '';
+    const d = el('span','dot' + (modelReady ? '' : ' off'));
+    $('#status').appendChild(d);
+    $('#status').appendChild(document.createTextNode(
+      h.crew + ' crew · ' + h.flights + ' flights · ' + (modelReady ? 'model ready' : 'engine only')));
+    if(!modelReady){
+      $('#input').placeholder = 'No model configured — use the buttons above to drive the engine directly';
+      $('#workhint').textContent = 'Model off. The workspace runs on the engine alone.';
+    }
+  }catch(e){
+    $('#status').textContent = 'engine unreachable';
+    setPanels([(() => { const p = panel('Engine unavailable');
+      p.appendChild(stateBlock('err','Cannot reach the engine',
+        'Start it with: python -m aircrew.server')); return p; })()]);
+  }
+  $('#input').focus();
+})();
+</script>
+</body>
+</html>
