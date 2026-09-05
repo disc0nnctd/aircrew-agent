@@ -83,6 +83,26 @@ def test_rule_limits_are_not_flagged():
     assert g.ok
 
 
+def test_a_claim_does_not_repeat_what_the_model_already_wrote():
+    """Claims are whole sentences so they stand up alone, but the model writes
+    around them, so the placeholder lands mid-sentence: "the cheapest option is
+    the cheapest legal option is Assign...". Only words already on the page are
+    dropped, so no figure can be lost this way."""
+    from aircrew.grounding import _fit
+
+    assert _fit("the cheapest joint plan costs INR 42,500",
+                "The cheapest joint plan costs ") == "INR 42,500"
+    assert _fit("C-2210 is rated on A320",
+                "C-2210 is based in DEL and is rated on ") == "A320"
+    # nothing typed yet: the claim stands whole
+    assert _fit("5 candidates are legal", "") == "5 candidates are legal"
+    # an unrelated lead-in must not eat the claim
+    assert _fit("5 candidates are legal", "Here is the answer. ") == "5 candidates are legal"
+    # and the figure survives every path
+    for before in ("The cheapest joint plan costs ", "", "Cost: "):
+        assert "42,500" in _fit("the cheapest joint plan costs INR 42,500", before)
+
+
 # --- the loop -------------------------------------------------------------
 def test_loop_grounds_a_good_answer():
     t = Tools()

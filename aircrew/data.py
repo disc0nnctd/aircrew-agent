@@ -239,6 +239,21 @@ class Dataset:
         return on_date in self.schedule_dates
 
     @cached_property
+    def aircraft_types(self) -> list[str]:
+        """A320, ATR72. A controller names a type as readily as a tail, so
+        anything that filters on aircraft has to know the difference."""
+        return sorted({f["aircraft_type"] for f in self.flights})
+
+    @cached_property
+    def tails(self) -> list[str]:
+        return sorted({f["aircraft"] for f in self.flights})
+
+    def type_of_pairing(self, pairing: dict) -> str:
+        """The fleet a pairing is flown on, read from its first leg."""
+        first = pairing["days"][0]["flights"][0]
+        return self.flight_by_id[first]["aircraft_type"]
+
+    @cached_property
     def snapshot_utc(self) -> datetime:
         return parse_utc(self.duty_clocks[0]["as_of_utc"])
 
@@ -307,7 +322,14 @@ class Dataset:
         if pairing_id:
             out = [p for p in out if p["pairing_id"] == pairing_id]
         if aircraft:
-            out = [p for p in out if p["aircraft"].upper() == aircraft.upper()]
+            want = aircraft.upper()
+            # "A320" is a type, "VT-DXA" is a tail, and a controller says both.
+            # Matching only tails made `aircraft="A320"` return zero pairings
+            # with a confident count, which is the worst kind of wrong answer.
+            if want in {t.upper() for t in self.aircraft_types}:
+                out = [p for p in out if self.type_of_pairing(p).upper() == want]
+            else:
+                out = [p for p in out if p["aircraft"].upper() == want]
         if on_date:
             out = [p for p in out if any(d["date"] == on_date for d in p["days"])]
         if crew_id:

@@ -116,7 +116,10 @@ setTimeout(async () => {
   const groups = exclPanel.querySelectorAll('details.more');
   check('exclusions are grouped into details', groups.length >= 3, `${groups.length} groups`);
   const open = [...groups].filter(d => d.open);
-  check('only the largest group starts open', open.length === 1, `${open.length} open`);
+  check('every exclusion group starts shut', open.length === 0, `${open.length} open`);
+  check('the biggest group is listed first',
+        /9 &#215;|9 ×/.test(groups[0].querySelector('summary').innerHTML),
+        groups[0].querySelector('summary').textContent);
   check('a shut group still says how many it holds',
         /\d+ crew/.test(groups[1].querySelector('summary').textContent),
         groups[1].querySelector('summary').textContent);
@@ -135,6 +138,29 @@ setTimeout(async () => {
   check('the rest is folded and counted', !!fold && /142 in total/.test(fold.textContent));
   check('the folded table is not open by default', fold && !fold.open);
 
+
+  // 7b. the workspace draws the decision, not the last thing that ran
+  const lookupEnv = {summary:'1 crew', claims:[], data:{count:1, crew:[{crew_id:'C-3310'}]}};
+  const checkEnv  = {summary:'legal', claims:[], data:{crew_id:'C-3310', pairing_id:'P-2291',
+                     rules:{legal:true, findings:[], rules_checked:[]},
+                     callable:{ok:true, reachability_minutes:45}}};
+  const mixed = w.drawableSteps({
+    tool_results: [payload, checkEnv, lookupEnv],
+    tool_calls: [{name:'resolve_cover', arguments:{}},
+                 {name:'check_assignment', arguments:{}},
+                 {name:'lookup', arguments:{entity:'crew'}}]});
+  check('all three steps are drawable', mixed.length === 3, mixed.length + ' drawable');
+  // a payload a panel cannot render must cost the panel, never the turn
+  const broken = w.drawableSteps({tool_results:[{summary:'x', data:{crew_id:'C-1'}}],
+                                  tool_calls:[{name:'check_assignment', arguments:{}}]});
+  check('a malformed payload is skipped, not thrown', broken.length === 0);
+  const picked = w.mostDecisive(mixed);
+  check('the plan wins over a later check and a later lookup',
+        picked.call.name === 'resolve_cover', picked.call.name);
+  const m3 = w.say('Advisor', w.renderAnswer('answer'));
+  w.showSteps(mixed, 'q', m3);
+  check('so the workspace shows the ranked cover',
+        w.document.querySelector('#panels').textContent.includes('Ranked cover'));
 
   // 8. the boundary and the flow
   const tools = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture_tools.json'), 'utf8'));

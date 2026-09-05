@@ -126,6 +126,53 @@ def _norm_num(x) -> str:
     return str(int(f)) if f == int(f) else f"{f:g}"
 
 
+_LEAD_IN = re.compile(r"[A-Za-z][\w'’-]*(?:\s+[\w'’-]+)*\s*$")
+
+
+def _fit(text: str, before: str) -> str:
+    """Drop the part of a claim the model has already written.
+
+    A claim is a whole sentence -- "the cheapest legal option is Assign Captain
+    C-3310 (reserve callout) at INR 18,500" -- because on its own it has to
+    stand up as a statement. The model writes around it, so the placeholder
+    lands mid-sentence and the reader gets "the cheapest option is the cheapest
+    legal option is Assign Captain...". Substituting only the part that is not
+    already on the page fixes the stutter without letting the model edit the
+    claim: the words it keeps are its own, and every word it gains is the
+    engine's.
+
+    Only a leading run of whole words is ever dropped, so a figure can never be
+    removed this way.
+    """
+    tail = _LEAD_IN.search(before or "")
+    if not tail:
+        return text
+    typed = tail.group(0).strip().lower()
+    if not typed:
+        return text
+    words = text.split()
+    low = (before or "").lower()
+
+    def safe(dropped: list[str]) -> bool:
+        # Never hide anything the reader has not already been shown: every
+        # word removed must already appear in what the model wrote before it.
+        return all(w.lower().strip(".,;:()") in low for w in dropped)
+
+    # Longest prefix of the claim the model has already typed, longest first so
+    # "the cheapest legal option is" beats "the". The prefix can match either in
+    # full, or on its last few words: the model writes "C-2210 is based in DEL
+    # and is rated on {{claim}}" where the claim starts "C-2210 is rated on".
+    for n in range(len(words) - 1, 0, -1):
+        rest = " ".join(words[n:]).strip()
+        if not rest:
+            continue
+        prefix = words[:n]
+        for k in range(n, 1, -1):
+            if typed.endswith(" ".join(prefix[n - k:]).lower()) and safe(prefix):
+                return rest
+    return text
+
+
 def check(reply: str, tool_results: list[dict]) -> Grounding:
     claims, figures = collect(tool_results)
 
@@ -135,7 +182,9 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
         cid = m.group(1)
         used.append(cid)
         c = claims.get(cid)
-        return c["text"] if c else f"[unknown claim {cid}]"
+        if not c:
+            return f"[unknown claim {cid}]"
+        return _fit(c["text"], reply[: m.start()])
 
     rendered = CLAIM_RE.sub(sub, reply)
 

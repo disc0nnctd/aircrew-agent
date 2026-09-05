@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crew Ops Advisor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%230e1116%27/%3E%3Cpath d=%27M2 9h12M8 3v10%27 stroke=%27%23f0b429%27 stroke-width=%271.6%27/%3E%3C/svg%3E">
 <style>
 /* ---------------------------------------------------------------------------
    Reading this as: a crew-control desk tool for a controller working at 6 a.m.
@@ -55,22 +56,32 @@ a,button,[tabindex]{transition:background-color .09s,border-color .09s,color .09
    Two panes, conversation left at a fixed comfortable measure, workspace right
    taking the rest. Reason: the evidence is the wide thing (tables of 40
    candidates); the decision is the narrow thing. */
-.app{display:grid;grid-template-columns:minmax(340px,420px) 1fr;height:100vh}
+.app{display:grid;grid-template-columns:minmax(340px,440px) 1fr;height:calc(100vh - 45px)}
 @media (max-width:900px){
   .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}
   .chat{border-right:none;border-bottom:1px solid var(--line);max-height:60vh}
 }
 
-/* --- header -------------------------------------------------------------- */
-header{
-  display:flex;align-items:baseline;gap:10px;
-  padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);
+/* --- the bar -------------------------------------------------------------
+   Full width, above both panes. The snapshot, the counts and the model are
+   facts about the whole desk, so they do not belong inside the chat column. */
+header.bar{
+  display:flex;align-items:center;gap:10px;height:45px;
+  padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel);
 }
-header h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.01em}
-header .sub{font-size:12px;color:var(--ink-faint)}
-header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:var(--mono)}
-.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px}
+header.bar h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.01em;white-space:nowrap}
+header.bar .sub{font-size:12px;color:var(--ink-faint);white-space:nowrap}
+.bar-spacer{margin-left:auto}
+header.bar .status{font-size:12px;color:var(--ink-dim);font-family:var(--mono);white-space:nowrap}
+header.bar .status b{color:var(--ink);font-weight:600}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green)}
 .dot.off{background:var(--ink-faint)}
+.toggle{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-dim);
+  cursor:pointer;white-space:nowrap}
+.toggle input{margin:0;cursor:pointer}
+.devonly{display:none}
+body.dev .devonly{display:inline-block}
+@media (max-width:1100px){header.bar .status{display:none}}
 .ghost{background:none;border:1px solid var(--line);color:var(--ink-dim);
   font:12px var(--sans);padding:3px 9px;border-radius:3px;cursor:pointer}
 .ghost:hover{color:var(--ink);border-color:var(--blue)}
@@ -106,6 +117,21 @@ header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:
 .flow-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font-size:12px;color:var(--ink-dim)}
 .flow-legend span{display:flex;align-items:center;gap:6px}
 .flow-legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.modal-card.narrow{width:min(760px,100%)}
+.brief{max-width:none}
+.brief-sec{margin-bottom:20px}
+.brief-sec h4{margin:0 0 7px;font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--blue)}
+.brief p{margin:0 0 9px;line-height:1.55;color:var(--ink-dim)}
+.brief ul{margin:0;padding-left:18px;color:var(--ink-dim);line-height:1.55}
+.brief li{margin:4px 0}
+.brief b{color:var(--ink)}
+.brief-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:9px}
+.brief-table th{text-align:left;padding:6px 8px;background:var(--panel-2);
+  color:var(--ink-faint);font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.05em}
+.brief-table td{padding:6px 8px;border-top:1px solid var(--line);color:var(--ink-dim)}
+.brief-table td.num{color:var(--accent);font-family:var(--mono);white-space:nowrap}
+.brief .muted .ghost{margin:0 3px}
 
 /* --- chat ---------------------------------------------------------------- */
 .chat{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel);min-height:0}
@@ -194,23 +220,34 @@ details.more > summary .count{margin-left:auto;color:var(--ink-faint);font-famil
 .crumb{font-size:12px;color:var(--ink-faint)}
 .composer{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;background:var(--panel)}
 .composer textarea{
-  flex:1;resize:none;min-height:44px;max-height:140px;padding:9px 10px;
+  flex:1;resize:none;min-height:54px;max-height:140px;padding:9px 10px;
   background:#0b0f14;color:var(--ink);border:1px solid var(--line);border-radius:4px;
   font:14px/1.4 var(--sans);
 }
 .composer button{
-  min-height:44px;min-width:64px;padding:0 14px;border:1px solid var(--line);border-radius:4px;
+  min-height:54px;min-width:64px;padding:0 14px;border:1px solid var(--line);border-radius:4px;
   background:var(--panel-2);color:var(--ink);font:600 13px var(--sans);cursor:pointer;
 }
 .composer button:hover:not(:disabled){background:#243040;border-color:var(--blue)}
 .composer button:disabled{opacity:.5;cursor:not-allowed}
-.starters{padding:0 12px 10px;display:flex;flex-wrap:wrap;gap:6px}
+/* The starters open the conversation rather than trailing it, so they sit at
+   the top of an empty log and disappear once it is no longer empty. */
+.intro h2{margin:0 0 6px;font-size:17px;font-weight:650}
+.intro p{margin:0 0 4px;color:var(--ink-dim);font-size:13px;line-height:1.5}
+.starters{display:flex;flex-direction:column;gap:6px;margin-top:12px}
 .starters button{
-  font:12px var(--sans);color:var(--ink-dim);background:transparent;
-  border:1px solid var(--line);border-radius:3px;padding:5px 8px;cursor:pointer;text-align:left;
-  min-height:32px;
+  font:13px var(--sans);color:var(--ink-dim);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:5px;padding:9px 11px;cursor:pointer;
+  text-align:left;min-height:38px;display:flex;align-items:center;gap:9px;
 }
 .starters button:hover{color:var(--ink);border-color:var(--blue)}
+.starters .tier{font:600 10px var(--mono);border:1px solid currentColor;
+  border-radius:999px;padding:0 6px;margin-left:auto;flex:none}
+.composer-hint{display:flex;align-items:center;gap:10px;padding:0 12px 10px;
+  font-size:11.5px;color:var(--ink-faint);background:var(--panel)}
+.linkish{margin-left:auto;background:none;border:none;color:var(--ink-faint);
+  font:inherit;cursor:pointer;text-decoration:underline;padding:0}
+.linkish:hover{color:var(--ink-dim)}
 
 /* --- workspace ----------------------------------------------------------- */
 .work{overflow-y:auto;padding:16px 18px 40px;min-height:0}
@@ -300,24 +337,45 @@ pre.draft{margin:0;padding:12px;font-family:var(--mono);font-size:12.5px;white-s
 </style>
 </head>
 <body>
+<!-- One bar across the top, not one per pane. The status belongs to the whole
+     desk, and squeezed into a 420px column the title wrapped onto three lines. -->
+<header class="bar">
+  <span class="dot off" id="dot"></span>
+  <h1>Crew Ops Advisor</h1>
+  <span class="sub">DX network</span>
+  <span class="bar-spacer"></span>
+  <button id="boundary" class="ghost" type="button"
+          title="Show the system prompt and the tool surface">boundary</button>
+  <button id="flow" class="ghost" type="button"
+          title="Show how one question becomes an answer">flow</button>
+  <button id="brief" class="ghost devonly" type="button"
+          title="The technical and agentic boundary, for presenting">briefing</button>
+  <label class="toggle" title="Show the presentation briefing and tool tiers">
+    <input type="checkbox" id="devview"> dev view
+  </label>
+  <span class="status" id="status">checking…</span>
+</header>
+
 <div class="app">
   <section class="chat">
-    <header>
-      <h1>Crew Ops Advisor</h1>
-      <span class="sub">DX network</span>
-      <button id="boundary" class="ghost" type="button"
-              title="Show the system prompt and the tool surface">boundary</button>
-      <button id="flow" class="ghost" type="button"
-              title="Show how one question becomes an answer">flow</button>
-      <span class="status" id="status"><span class="dot off"></span>checking…</span>
-    </header>
-    <div class="log" id="log" aria-live="polite"></div>
-    <div class="starters" id="starters"></div>
+    <div class="log" id="log" aria-live="polite">
+      <div class="intro" id="intro">
+        <h2>What's happened?</h2>
+        <p>Ask in plain English. Every figure comes from the deterministic engine:
+           the model chooses which checks to run and explains the result, it never
+           calculates.</p>
+      </div>
+      <div class="starters" id="starters"></div>
+    </div>
     <form class="composer" id="composer">
       <textarea id="input" rows="1" placeholder="Captain C-1042 is sick for P-2291 — what should I do?"
         aria-label="Ask the crew ops advisor"></textarea>
       <button type="submit" id="send">Send</button>
     </form>
+    <div class="composer-hint">
+      <span>Enter to send · Shift+Enter for a new line</span>
+      <button type="button" id="clear" class="linkish">Clear conversation</button>
+    </div>
   </section>
 
   <section class="work" id="work" aria-label="Operational workspace">
@@ -464,10 +522,10 @@ const TOOL_TIER = {
   resolve_cover: 3, draft_notification: 3,
 };
 
-function modal(title, build){
+function modal(title, build, cls){
   const overlay = el('div','modal');
   overlay.addEventListener('click', e => { if(e.target === overlay) close(); });
-  const card = el('div','modal-card');
+  const card = el('div','modal-card' + (cls ? ' ' + cls : ''));
   const head = el('header');
   head.appendChild(el('h3', null, title));
   const x = el('button','ghost','close');
@@ -604,6 +662,125 @@ function showFlow(){
   });
 }
 
+/* --- the briefing: one window that explains the whole system --------------
+
+   `boundary` shows the raw material and `flow` shows the shape. This is the
+   thing you talk from: what the product does, where the line between the
+   model and the engine sits, why it is drawn there, and what is measured.
+   Written for a judge who has three minutes and has not read the code. */
+function showBriefing(){
+  const sec = (title, build) => {
+    const s = el('section','brief-sec');
+    s.appendChild(el('h4', null, title));
+    s.appendChild(build());
+    return s;
+  };
+  const para = t => el('p', null, t);
+
+  modal('Crew Ops Advisor — technical briefing', () => {
+    const w = el('div','brief');
+
+    w.appendChild(sec('The problem', () => {
+      const d = el('div');
+      d.appendChild(para(
+        'A crew controller loses a crew member at 03:00 and has minutes to ' +
+        'decide. The question is never only "who can cover?" but "who can ' +
+        'legally cover, what does each option cost, and why is everyone else ' +
+        'out?" Seven rules, 150 crew, 39 pairings, one week of schedule.'));
+      return d;
+    }));
+
+    w.appendChild(sec('The architectural claim', () => {
+      const d = el('div');
+      d.appendChild(para(
+        'Deterministic Python computes every figure. The language model chooses ' +
+        'which question to ask and explains the result. It is never in a ' +
+        'position where it could calculate, because no tool accepts a cost or a ' +
+        'verdict as an argument and no tool lets it skip a rule. That is ' +
+        'enforced by a gate and by two tests, not by a line in a prompt.'));
+      const ul = el('ul');
+      [['The model owns', 'routing, ambiguity, follow-ups, which verdict was asked for, and the words'],
+       ['Python owns', 'duty accrual, rest, FDP, qualification, certification, base, cost, ranking, search'],
+       ['The gate', 'every figure in the answer must appear in this turn’s tool results, or the answer is withheld']]
+        .forEach(([k, v]) => {
+          const li = el('li');
+          li.appendChild(el('b', null, k + ': '));
+          li.appendChild(document.createTextNode(v));
+          ul.appendChild(li);
+        });
+      d.appendChild(ul);
+      return d;
+    }));
+
+    w.appendChild(sec('Why the line is drawn there', () => {
+      const d = el('div');
+      d.appendChild(para(
+        'A language model that is merely told not to calculate will still ' +
+        'calculate, and the failure is invisible: a plausible number in a ' +
+        'confident sentence. Early on, moving one steer out of a tool result ' +
+        'and into a prompt produced an invented INR 1,250,000 cancellation ' +
+        'cost. The fix was not a firmer instruction. It was removing the ' +
+        'opportunity, then testing that it stays removed.'));
+      d.appendChild(para(
+        'The dangerous case is not invention, though. It is a real number ' +
+        'attached to the wrong label, and a grounded wrong answer: when the ' +
+        'model hallucinated a 2025 date the closure returned zero flights and ' +
+        'it reported "0 flights affected", which was wrong and passed the gate. ' +
+        'Tools now refuse a date outside the schedule instead of returning an ' +
+        'empty result.'));
+      return d;
+    }));
+
+    w.appendChild(sec('What is measured', () => {
+      const d = el('div');
+      const t = el('table','brief-table');
+      t.innerHTML = '<thead><tr><th>Measurement</th><th>Result</th><th>How</th></tr></thead>';
+      const tb = el('tbody');
+      [['38 questions through the engine', '36/36 gradable', 'python -m aircrew.scoreboard'],
+       ['6 worked scenarios', '19/19 checks', 'same command'],
+       ['Agent loop and claim gate', '14/14', 'python -m tests.test_agent_loop'],
+       ['Workspace and chat pane', '60 checks', 'node tests/ui_check.js'],
+       ['38 questions through the agent', '35/36 re-scored, not re-run live', 'python -m aircrew.replay']]
+        .forEach(row => {
+          const tr = el('tr');
+          row.forEach((c, i) => tr.appendChild(el('td', i === 1 ? 'num' : null, c)));
+          tb.appendChild(tr);
+        });
+      t.appendChild(tb);
+      d.appendChild(t);
+      d.appendChild(para(
+        'Two of the 38 have rubrics for answer keys rather than values, so the ' +
+        'honest denominator is 36. Grading a rubric against itself is a fake pass.'));
+      return d;
+    }));
+
+    w.appendChild(sec('What it does not do', () => {
+      const d = el('div');
+      const ul = el('ul');
+      ['The gate matches figures, not meaning: a real number under the wrong label still passes.',
+       'Two of the seven rules never eliminate anybody in this dataset. The heaviest 28-day block is 79.28h against a 100h limit.',
+       'Positioning considers same-day nonstop deadheads only.',
+       'The agent number was re-scored from recorded calls, not re-run after the last fixes.']
+        .forEach(x => ul.appendChild(el('li', null, x)));
+      d.appendChild(ul);
+      return d;
+    }));
+
+    const foot = el('p','muted');
+    foot.appendChild(document.createTextNode('The '));
+    const b1 = el('button','ghost','boundary'); b1.type = 'button';
+    b1.addEventListener('click', () => { $('.modal').remove(); showBoundary(); });
+    foot.appendChild(b1);
+    foot.appendChild(document.createTextNode(' button shows the real prompt and tool surface; '));
+    const b2 = el('button','ghost','flow'); b2.type = 'button';
+    b2.addEventListener('click', () => { $('.modal').remove(); showFlow(); });
+    foot.appendChild(b2);
+    foot.appendChild(document.createTextNode(' draws the same thing as one picture.'));
+    w.appendChild(foot);
+    return w;
+  }, 'narrow');
+}
+
 /* --- chat log ----------------------------------------------------------- */
 
 /* The model writes light markdown -- bold for the figure it wants read first,
@@ -645,7 +822,15 @@ function renderAnswer(text){
   return wrap;
 }
 
+/* The opener earns its space only while the log is empty. Once the controller
+   has asked something, the conversation is the content. */
+function dismissIntro(){
+  const i = $('#intro'); if(i) i.remove();
+  const s = $('#starters'); if(s) s.remove();
+}
+
 function say(who, text, cls){
+  dismissIntro();
   const m = el('div', 'msg ' + (cls || ''));
   m.appendChild(el('div', 'who', who));
   const body = el('div', 'body');
@@ -808,8 +993,10 @@ function pResolve(env){
     const ep = panel('Why the others were ruled out', d.exclusions.length + ' excluded');
     const groups = {};
     d.exclusions.forEach(x => (groups[x.rule] = groups[x.rule] || []).push(x));
-    // Largest group first, and only that one open: the shape of the rejection
-    // is the finding, and 19 names at once is not a finding.
+    // Largest group first, all shut. The shape of the rejection is the
+    // finding -- "9 rest, 8 rating, 1 duty, 1 base" fits on one screen and
+    // answers "who did you consider?" -- while 19 names does not. Opening the
+    // biggest group by default buried the other three below the fold.
     Object.keys(groups).sort((a,b) => groups[b].length - groups[a].length)
       .forEach((rule, i) => {
         const head = el('span');
@@ -824,7 +1011,7 @@ function pResolve(env){
             ul.appendChild(li);
           });
           return ul;
-        }, {open: i === 0, why: groups[rule][0].rule_text || gloss(rule)}));
+        }, {why: groups[rule][0].rule_text || gloss(rule)}));
       });
     out.push(ep);
   }
@@ -1172,13 +1359,34 @@ function markShown(node){
 function drawableSteps(r){
   return (r.tool_results || [])
     .map((env, i) => ({env, call: (r.tool_calls || [])[i]}))
-    .filter(x => x.call && x.env && x.env.data && !x.env.data.error &&
-                 panelsFor(x.call.name, x.call.arguments || {}, x.env).length);
+    .filter(x => {
+      if(!x.call || !x.env || !x.env.data || x.env.data.error) return false;
+      // A renderer is the wrong place to lose an answer. If a payload is not
+      // the shape this panel expects, drop the panel and keep the turn: the
+      // prose is already grounded, and a blank workspace beats a blank page.
+      try{ return panelsFor(x.call.name, x.call.arguments || {}, x.env).length > 0; }
+      catch(e){ console.warn('panel failed for ' + x.call.name, e); return false; }
+    });
+}
+
+/* Draw the most decisive result, not the last one.
+
+   The model orients itself with lookups and often verifies its own answer
+   afterwards, so the final call is frequently a check rather than the plan.
+   Drawing it left the ranked cover -- the thing the controller acts on --
+   off screen behind a two-line confirmation. Tier ranks the tools by how much
+   of the decision they carry; the latest call wins a tie, because that is the
+   one the model answered from. */
+function mostDecisive(steps){
+  return steps.reduce((best, s, i) => {
+    const rank = TOOL_TIER[s.call.name] || 0;
+    return !best || rank >= best.rank ? {rank, i, s} : best;
+  }, null).s;
 }
 
 function showSteps(steps, label, node){
-  const last = steps[steps.length - 1];
-  setPanels(panelsFor(last.call.name, last.call.arguments || {}, last.env), label);
+  const pick = mostDecisive(steps);
+  setPanels(panelsFor(pick.call.name, pick.call.arguments || {}, pick.env), label);
   markShown(node);
 }
 
@@ -1231,6 +1439,11 @@ function buildStarters(){
   const host = $('#starters');
   STARTERS.forEach(([label, tool, args]) => {
     const b = el('button', null, label); b.type = 'button';
+    // The tier is a property of the tool this starter runs, not something
+    // inferred from the wording. Nothing reads a typed question and decides
+    // its tier, so no badge is ever shown on one.
+    const tier = TOOL_TIER[tool];
+    if(tier) b.appendChild(el('span','tier t' + tier + ' devonly', 'T' + tier));
     b.addEventListener('click', async () => {
       if(modelReady){ $('#input').value = label; $('#composer').requestSubmit(); return; }
       say('Controller', label, 'you');
@@ -1285,6 +1498,27 @@ $('#input').addEventListener('keydown', e => {
   $('#boundary').addEventListener('click', () => showBoundary().catch(e =>
     modal('The boundary', () => stateBlock('err','Could not load it', e.message))));
   $('#flow').addEventListener('click', showFlow);
+  $('#brief').addEventListener('click', showBriefing);
+
+  // Dev view: the briefing button and the tool tiers. Off by default, because
+  // a controller does not care which tier a tool is; a judge does.
+  const dev = $('#devview');
+  try{ dev.checked = localStorage.getItem('dev') === '1'; }catch(e){}
+  const applyDev = () => {
+    document.body.classList.toggle('dev', dev.checked);
+    try{ localStorage.setItem('dev', dev.checked ? '1' : '0'); }catch(e){}
+  };
+  dev.addEventListener('change', applyDev);
+  applyDev();
+
+  $('#clear').addEventListener('click', () => {
+    $('#log').textContent = '';
+    setPanels([(() => { const p = panel('Nothing loaded yet');
+      p.appendChild(stateBlock('', 'Pick a disruption, or describe one',
+        'The workspace fills with whatever the engine computes.')); return p; })()]);
+    markShown(null);
+    $('#input').focus();
+  });
   $('#panels').appendChild((() => {
     const p = panel('Nothing loaded yet');
     p.appendChild(stateBlock('', 'Pick a disruption, or describe one',
@@ -1293,13 +1527,16 @@ $('#input').addEventListener('keydown', e => {
     return p;
   })());
   try{
-    const h = await (await fetch('/api/health')).json();
+    const [h, tools] = await Promise.all([getJSON('/api/health'), getJSON('/api/tools')]);
     modelReady = !!h.model;
-    $('#status').innerHTML = '';
-    const d = el('span','dot' + (modelReady ? '' : ' off'));
-    $('#status').appendChild(d);
-    $('#status').appendChild(document.createTextNode(
-      h.crew + ' crew · ' + h.flights + ' flights · ' + (modelReady ? 'model ready' : 'engine only')));
+    $('#dot').className = 'dot' + (modelReady ? '' : ' off');
+    const st = $('#status');
+    st.textContent = '';
+    st.appendChild(document.createTextNode('snapshot '));
+    st.appendChild(el('b', null, h.snapshot || '2026-09-14 18:00Z'));
+    st.appendChild(document.createTextNode(
+      ' · ' + h.crew + ' crew · ' + h.flights + ' flights · ' + tools.length + ' tools · '));
+    st.appendChild(el('b', null, modelReady ? (h.model_name || 'model ready') : 'engine only'));
     if(!modelReady){
       $('#input').placeholder = 'No model configured — use the buttons above to drive the engine directly';
       $('#workhint').textContent = 'Model off. The workspace runs on the engine alone.';

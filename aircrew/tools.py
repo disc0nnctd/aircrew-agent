@@ -223,6 +223,18 @@ class Tools:
 
         if entity == "pairings":
             d = q.pairings(pairing_id, aircraft, on_date, crew_id)
+            # A zero count is the dangerous result: it reads like an answer.
+            # Say what would have to be true for it to be right.
+            if not d["count"]:
+                ds = self.q.ds
+                return envelope(
+                    "0 pairings match, which usually means a filter is wrong rather "
+                    f"than the roster being empty. Tails are {', '.join(ds.tails)}; "
+                    f"types are {', '.join(ds.aircraft_types)}; the schedule runs "
+                    f"{ds.schedule_dates[0]} to {ds.schedule_dates[-1]}. Do not "
+                    "report this as 'no pairings'.",
+                    d,
+                )
             return envelope(f"{d['count']} pairings match.", d)
 
         if entity == "risk":
@@ -706,7 +718,7 @@ SCHEMAS: list[dict] = [
                 "dep": _s("string", "departure station, or the origin for entity=stations"),
                 "arr": _s("string", "arrival station"),
                 "flight_no": _s("string", "e.g. DX412"),
-                "aircraft": _s("string", "tail, e.g. VT-DXA"),
+                "aircraft": _s("string", "a tail (VT-DXA) or a fleet type (A320, ATR72); both filter"),
                 "crew_id": _s("string", "e.g. C-1042"),
                 "pairing_id": _s("string", "e.g. P-2291"),
                 "rank": _s("string", "Captain|First Officer|Senior Cabin Crew|Cabin Crew"),

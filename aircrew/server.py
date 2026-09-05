@@ -83,6 +83,8 @@ class Handler(BaseHTTPRequestHandler):
                     "flights": len(_tools.ds.flights),
                     "pairings": len(_tools.ds.pairings),
                     "model": bool(get_agent()),
+                    "model_name": getattr(get_agent(), "model", None),
+                    "snapshot": _tools.ds.snapshot_utc.strftime("%Y-%m-%d %H:%MZ"),
                     "model_error": _agent_error,
                 }
             )
