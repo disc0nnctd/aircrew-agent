@@ -93,6 +93,54 @@ def tool_names_in(reply: str) -> list[str]:
     return sorted({m.group(1) for m in TOOL_NAME_RE.finditer(reply)})
 
 
+# Identifiers a controller acts on. A claim is about one of these, and so is
+# the sentence the model wraps around it; when the two disagree the figure is
+# real and the statement is still false.
+ENTITY_RE = re.compile(r"\b(C-\d{4}|P-\d{4}|DX\d{3}|VT-DX[A-Z])\b")
+
+# The narrow case where a model is declining to assert rather than asserting.
+# Deliberately not general negation: "it is not true that C-2087 is illegal"
+# should still be an assertion, and a broad negation exception would be a new
+# way to hide one.
+HEDGE_RE = re.compile(
+    r"\b(?:cannot|can\s?not|can't|could\s?not|couldn't|unable\s+to|"
+    r"have\s+not|haven't|has\s+not|hasn't|do\s+not|don't|did\s+not|didn't|"
+    r"not\s+yet)\s+"
+    r"(?:been\s+)?(?:confirm|establish|verify|check|assess|say|state|tell)\w*\b"
+    r"|\bwithout\s+checking\b|\bnot\s+(?:been\s+)?(?:checked|assessed|established|verified)\b",
+    re.I,
+)
+
+# Verdicts, split by what they are about, because "legal" and "callable" are
+# different questions with different answers and a result that settles one
+# says nothing about the other.
+LEGALITY_POS_RE = re.compile(r"\b(legal|legally|compliant)\b", re.I)
+CALLABLE_POS_RE = re.compile(r"\b(callable|can be called out)\b", re.I)
+NEGATED_RE = re.compile(
+    r"\b(not|never|no longer|isn't|aren't|cannot|can't|won't|nor)\b", re.I)
+
+# A clock time is a figure a controller sets an alarm by, and the number regex
+# deliberately skips it so that "09:00Z" is not read as the number 9. That left
+# report times, release times and rest windows entirely unchecked.
+CLOCK_RE = re.compile(r"(?<![\d])([0-2]?\d):([0-5]\d)(?::[0-5]\d)?(?![\d])")
+
+# A figure spelled out beside its unit is a figure. The engine only ever emits
+# digits, so "ten hours" in a reply is prose standing in for a number that was
+# never computed. "one" is left out: it is a pronoun at least as often as a
+# count ("the cheapest one").
+SPELLED_UNIT_RE = re.compile(
+    r"\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"twenty|thirty|forty|fifty|sixty|ninety)\s+"
+    r"(hours?|minutes?|rupees?|passengers?|seats?|lakh|crore)\b",
+    re.I,
+)
+
+# A currency marker means the number after it is money, whatever its size.
+# Without this "Cancellation costs INR 7" passed, because 7 is on the small-count
+# allowlist below.
+MONEY_LEAD_RE = re.compile(r"(?:INR|Rs\.?|₹)\s*$", re.I)
+
+
 # Figures that are part of the vocabulary rather than a computed result.
 ALWAYS_OK = {
     "0", "1", "2", "3", "4", "5", "6", "7",       # small counts, rule ordinals
@@ -189,6 +237,111 @@ def mislabelled(reply: str, tool_results: list[dict]) -> list[dict]:
     return found
 
 
+def _entities(text: str) -> set[str]:
+    return {m.group(1) for m in ENTITY_RE.finditer(text or "")}
+
+
+def _sentences(text: str) -> list[str]:
+    return [t for t in re.split(r"(?<=[.!?])\s+|\n+", text or "") if t.strip()]
+
+
+def _hedged(sentence: str) -> bool:
+    return bool(HEDGE_RE.search(sentence))
+
+
+def _legality_of(text: str) -> str | None:
+    low = (text or "").lower()
+    if re.search(r"\billegal\b|\bbreach", low):
+        return "neg"
+    if re.search(r"\blegal\b|\bcompliant\b", low):
+        return "pos"
+    return None
+
+
+def _callability_of(text: str) -> str | None:
+    low = (text or "").lower()
+    if "cannot be called out" in low or "not callable" in low:
+        return "neg"
+    if "can be called out" in low or "is callable" in low:
+        return "pos"
+    return None
+
+
+def contradicted(reply: str, claims: dict[str, dict]) -> list[dict]:
+    """Positive verdicts the engine's own claims say the opposite of.
+
+    "C-2087 is legal and cheapest" is not an invented figure -- it contains no
+    figure at all -- and every earlier check passed it while the assignment
+    result in the same turn said illegal. A verdict is the most consequential
+    thing on the screen, so it is checked against the claim that settles that
+    same question about that same person, and only that one: legality and
+    callability have different answers and a result for one establishes
+    nothing about the other.
+    """
+    out = []
+    for sentence in _sentences(reply):
+        if _hedged(sentence):
+            continue
+        for label, rx, polarity in (
+            ("legal", LEGALITY_POS_RE, _legality_of),
+            ("callable", CALLABLE_POS_RE, _callability_of),
+        ):
+            m = rx.search(sentence)
+            if not m:
+                continue
+            # "C-2087 is not legal" asserts the negative, which needs no claim.
+            if NEGATED_RE.search(sentence[max(0, m.start() - 30):m.start()]):
+                continue
+            for who in _entities(sentence):
+                said = {polarity(c["text"]) for c in claims.values()
+                        if who in c["text"]}
+                said.discard(None)
+                if said == {"neg"}:
+                    out.append({"entity": who, "said": label})
+    return out
+
+
+def _unit_of(text: str) -> str | None:
+    """What kind of thing a claim is about, from its own wording."""
+    for kind, rx in WORD_KIND:
+        if re.search(rx, (text or "").lower()):
+            return kind
+    return None
+
+
+def misattributed(reply: str, claims: dict[str, dict]) -> list[dict]:
+    """Claims substituted into a sentence that is about something else.
+
+    Substitution stops the model inventing digits. It does not stop it
+    inventing what they mean: "Assign C-2210 at {{claim:c4}}" renders C-3310's
+    cost under C-2210's name, and every figure in it is real. Two ways that
+    goes wrong, and both are checked here -- the wrong subject, and the wrong
+    unit ("{{claim:c4}} passengers", where the claim is money).
+    """
+    out = []
+    for m in CLAIM_RE.finditer(reply):
+        claim = claims.get(m.group(1))
+        if not claim:
+            continue
+        before, after = reply[: m.start()], reply[m.end():]
+        sentence = (_sentences(before)[-1] if _sentences(before) else "") + \
+            (_sentences(after)[0] if _sentences(after) else "")
+        theirs = _entities(claim.get("text", ""))
+        ours = _entities(sentence)
+        wrong = {e for e in ours if e[:2] in {t[:2] for t in theirs}} - theirs
+        if theirs and wrong:
+            out.append({"claim": claim["id"], "about": sorted(theirs)[0],
+                        "written_about": sorted(wrong)[0], "why": "subject"})
+            continue
+        # A unit word directly after the placeholder names what the figure is.
+        tail = " ".join(after.strip().split()[:2])
+        theirs_unit, said_unit = _unit_of(claim.get("text", "")), _unit_of(tail)
+        if theirs_unit and said_unit and theirs_unit != said_unit:
+            out.append({"claim": claim["id"], "about": theirs_unit,
+                        "written_about": said_unit, "why": "unit"})
+    return out
+
+
 @dataclass
 class Grounding:
     ok: bool
@@ -199,6 +352,9 @@ class Grounding:
     mislabelled_figures: list[dict] = field(default_factory=list)
     spelled_figures: list[str] = field(default_factory=list)
     leaked_tool_names: list[str] = field(default_factory=list)
+    misattributed_claims: list[dict] = field(default_factory=list)
+    contradicted_verdicts: list[dict] = field(default_factory=list)
+    unknown_claims: list[str] = field(default_factory=list)
 
     @property
     def blocking(self) -> bool:
@@ -213,6 +369,13 @@ class Grounding:
             or self.unbacked_verdicts
             or self.mislabelled_figures
             or self.spelled_figures
+            or self.misattributed_claims
+            or self.contradicted_verdicts
+            # A cited id this turn does not have. Substitution has already
+            # turned it into "[unknown claim c999]", so the leftover pattern
+            # can no longer see it -- and the controller was being shown that
+            # bracket text as if it were an answer.
+            or self.unknown_claims
             or LEFTOVER_RE.search(self.rendered)
         )
 
@@ -244,6 +407,28 @@ class Grounding:
             bits.append(
                 "you stated a legality or cost verdict without a tool result "
                 "that establishes it"
+            )
+        for c in self.contradicted_verdicts:
+            bits.append(
+                f"you called {c['entity']} {c['said']}, and the result in this "
+                f"turn says the opposite"
+            )
+        for m in self.misattributed_claims:
+            if m["why"] == "subject":
+                bits.append(
+                    f"claim {m['claim']} is about {m['about']}, but you wrote "
+                    f"it into a sentence about {m['written_about']}; cite the "
+                    f"claim for {m['written_about']} or name {m['about']}"
+                )
+            else:
+                bits.append(
+                    f"claim {m['claim']} is a {m['about']} figure and you "
+                    f"labelled it {m['written_about']}"
+                )
+        if self.unknown_claims:
+            bits.append(
+                "there is no claim " + ", ".join(self.unknown_claims)
+                + " in this turn; the ids are listed in each result"
             )
         return (
             "Your reply was not sent. "
@@ -291,6 +476,30 @@ def collect(tool_results: list[dict]) -> tuple[dict[str, dict], set[str]]:
         walk(r.get("data"))
         walk(r.get("summary"))
     return claims, figures
+
+
+def _clock_times(tool_results: list[dict]) -> set[str]:
+    """Every HH:MM this turn's results contain, normalised."""
+    found: set[str] = set()
+
+    def walk(x):
+        if isinstance(x, str):
+            for m in CLOCK_RE.finditer(x):
+                found.add(f"{int(m.group(1)):02d}:{m.group(2)}")
+        elif isinstance(x, dict):
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                walk(v)
+
+    for r in tool_results:
+        for c in r.get("claims", []):
+            walk(c.get("text"))
+            walk(c.get("value"))
+        walk(r.get("data"))
+        walk(r.get("summary"))
+    return found
 
 
 def _norm_num(x) -> str:
@@ -433,14 +642,30 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
     ungrounded = []
     for m in NUMBER_RE.finditer(typed):
         n = _norm_num(m.group(1))
-        if n in ALWAYS_OK or n in figures:
+        if n in figures:
+            continue
+        # The small-count allowlist exists so "the 7 rules" is not a finding.
+        # A currency marker in front of the number says it is not vocabulary,
+        # it is money, and "INR 7" was passing on the strength of the 7.
+        if n in ALWAYS_OK and not MONEY_LEAD_RE.search(typed[:m.start()][-6:]):
             continue
         if any(a <= m.start() and m.end() <= b for a, b in date_spans):
             continue  # "15 Sep" is a date the controller said, not a figure
         ungrounded.append(m.group(1))
 
-    # A verdict with no tool result behind it at all.
-    unbacked = bool(VERDICT_RE.search(typed)) and not tool_results
+    # Clock times, which the number pattern skips on purpose.
+    stated = _clock_times([{"data": {"reply": typed}}])
+    for t in sorted(stated - _clock_times(tool_results)):
+        ungrounded.append(t)
+
+    # A verdict with no tool result behind it at all, unless the sentence is
+    # declining to give one -- "I cannot confirm that C-2087 is legal without
+    # checking" states nothing, and suppressing it taught the model to say
+    # less than it honestly could.
+    unbacked = any(
+        VERDICT_RE.search(sentence) and not _hedged(sentence)
+        for sentence in _sentences(typed)
+    ) and not tool_results
 
     # A placeholder that survived substitution is an id this turn does not
     # have. It must not reach the controller as a raw token, so the turn is
@@ -452,11 +677,18 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
     wrong_label = mislabelled(typed, tool_results)
     # A magnitude word is a number written as prose, and the digit checks
     # above cannot see it.
-    spelled = sorted({m.group(0).lower() for m in MAGNITUDE_RE.finditer(typed)})
+    spelled = sorted(
+        {m.group(0).lower() for m in MAGNITUDE_RE.finditer(typed)}
+        | {m.group(0).lower() for m in SPELLED_UNIT_RE.finditer(typed)}
+    )
     leaked = tool_names_in(rendered)
+    wrong_subject = misattributed(reply, claims)
+    contradictions = contradicted(typed, claims)
+    missing_ids = sorted({cid for cid in used if cid not in claims})
     return Grounding(
         ok=(not ungrounded and not unbacked and not unknown_claim
-            and not wrong_label and not spelled and not leaked),
+            and not wrong_label and not spelled and not leaked
+            and not wrong_subject and not contradictions),
         ungrounded_numbers=sorted(set(ungrounded)),
         unbacked_verdicts=unbacked,
         rendered=rendered,
@@ -464,4 +696,7 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
         mislabelled_figures=wrong_label,
         spelled_figures=spelled,
         leaked_tool_names=leaked,
+        misattributed_claims=wrong_subject,
+        contradicted_verdicts=contradictions,
+        unknown_claims=missing_ids,
     )
