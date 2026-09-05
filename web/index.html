@@ -81,6 +81,37 @@ header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:
 .trace{margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
 .trace span{display:inline-block;background:var(--panel-2);border:1px solid var(--line);
   border-radius:3px;padding:1px 5px;margin:2px 4px 0 0}
+
+/* An answer is written prose, so it is rendered as prose. The model emits
+   light markdown; pre-wrap printed the asterisks. */
+.msg .body.md{white-space:normal}
+.msg .body.md p{margin:0 0 7px}
+.msg .body.md p:last-child{margin-bottom:0}
+.msg .body.md strong{color:var(--ink);font-weight:650}
+.msg .body.md em{color:var(--ink-dim);font-style:italic}
+.msg .body.md code{font-family:var(--mono);font-size:12px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:3px;padding:0 4px}
+.msg .body.md h4{margin:9px 0 5px;font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-faint)}
+.msg .body.md h4:first-child{margin-top:0}
+.msg .body.md ul{margin:0 0 7px;padding-left:17px}
+.msg .body.md li{margin:2px 0}
+
+/* Which turn the workspace belongs to. Without it you scroll the chat and
+   lose track of what the right-hand pane is showing. */
+.msg.showing .body{border-left-color:var(--accent)}
+.evidence-btn{margin-top:7px;background:none;border:1px solid var(--line);
+  color:var(--ink-dim);font:inherit;font-size:12px;cursor:pointer;
+  border-radius:3px;padding:3px 9px}
+.evidence-btn:hover{border-color:var(--accent);color:var(--ink)}
+.msg.showing .evidence-btn{border-color:var(--accent);color:var(--accent)}
+
+/* A drill-down replaces the workspace, so there has to be a way back. */
+.backbar{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.backbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--ink-dim);
+  font:inherit;font-size:12px;cursor:pointer;border-radius:3px;padding:3px 9px}
+.backbtn:hover{border-color:var(--blue);color:var(--ink)}
+.crumb{font-size:12px;color:var(--ink-faint)}
 .composer{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;background:var(--panel)}
 .composer textarea{
   flex:1;resize:none;min-height:44px;max-height:140px;padding:9px 10px;
@@ -252,10 +283,53 @@ async function api(path, body){
 const runTool = (name, args) => api('/api/tool', {name, arguments: args || {}});
 
 /* --- chat log ----------------------------------------------------------- */
+
+/* The model writes light markdown -- bold for the figure it wants read first,
+   headings, the odd list. Printed raw, the controller reads asterisks. This
+   renders the subset the model actually emits and escapes everything else:
+   the text arrives from a language model, so it is never trusted as HTML. */
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderAnswer(text){
+  const wrap = el('div');
+  const inline = s => escapeHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s.,;:)]|$)/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  let list = null;
+
+  for(const raw of String(text || '').split('\n')){
+    const line = raw.replace(/\s+$/, '');
+    if(!line.trim()){ list = null; continue; }
+
+    // A heading is a line that is only a heading: "## Recovery plan", or a
+    // whole line wrapped in bold, which is how this model writes them.
+    const head = line.match(/^\s*#{1,6}\s+(.*)$/) ||
+                 line.match(/^\s*\*\*([^*]+)\*\*:?\s*$/);
+    if(head){ list = null; wrap.appendChild(el('h4', null, head[1].trim())); continue; }
+
+    const item = line.match(/^\s*[-*•]\s+(.*)$/) || line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if(item){
+      if(!list){ list = el('ul'); wrap.appendChild(list); }
+      const li = el('li'); li.innerHTML = inline(item[1]); list.appendChild(li);
+      continue;
+    }
+    list = null;
+    const p = el('p'); p.innerHTML = inline(line); wrap.appendChild(p);
+  }
+  return wrap;
+}
+
 function say(who, text, cls){
   const m = el('div', 'msg ' + (cls || ''));
   m.appendChild(el('div', 'who', who));
-  m.appendChild(el('div', 'body', text));
+  const body = el('div', 'body');
+  if(text instanceof Node){ body.className = 'body md'; body.appendChild(text); }
+  else body.textContent = text;
+  m.appendChild(body);
   $('#log').appendChild(m);
   $('#log').scrollTop = $('#log').scrollHeight;
   return m;
@@ -269,12 +343,51 @@ function trace(m, calls){
 }
 
 /* --- workspace ---------------------------------------------------------- */
-function setPanels(nodes){
+
+/* A drill-down ("why was this one ruled out?") replaces the whole workspace,
+   and the plan the controller was reading is gone. So a view knows where it
+   came from: `push` stacks, and Back returns. A new answer clears the stack,
+   because the trail belonged to the previous question. */
+let currentView = null;
+const viewStack = [];
+
+function paintView(){
+  if(!currentView) return;
+  const host = $('#panels'); host.textContent = '';
+  if(viewStack.length){
+    const bar = el('div','backbar');
+    const back = el('button','backbtn','← Back');
+    const to = viewStack[viewStack.length - 1].label;
+    back.type = 'button';
+    back.title = to ? 'Back to ' + to : 'Back to the previous view';
+    back.addEventListener('click', popPanels);
+    bar.appendChild(back);
+    if(currentView.label) bar.appendChild(el('span','crumb', currentView.label));
+    host.appendChild(bar);
+  }
+  currentView.nodes.forEach(n => host.appendChild(n));
+  $('#work').scrollTop = 0;
+}
+
+function setPanels(nodes, label){
   // Invariant 4: only replace when there is something to replace with.
   if(!nodes || !nodes.length) return;
-  const host = $('#panels'); host.textContent = '';
-  nodes.forEach(n => host.appendChild(n));
-  $('#work').scrollTop = 0;
+  viewStack.length = 0;
+  currentView = {nodes, label: label || ''};
+  paintView();
+}
+
+function pushPanels(nodes, label){
+  if(!nodes || !nodes.length) return;
+  if(currentView) viewStack.push(currentView);
+  currentView = {nodes, label: label || ''};
+  paintView();
+}
+
+function popPanels(){
+  if(!viewStack.length) return;
+  currentView = viewStack.pop();
+  paintView();
 }
 function panel(title, count){
   const p = el('div','panel'); const h = el('h3', null, title);
@@ -672,14 +785,59 @@ function pJoint(env){
   return out;
 }
 
+/* --- every answer keeps its own workspace -------------------------------
+
+   The workspace holds one case at a time, so a follow-up replaces the panel
+   the controller was still reading, and a turn that draws nothing leaves the
+   previous question's view up. Rather than have the model decide whether the
+   canvas is still relevant, each answer carries a button back to its own.
+   The conversation becomes the history of what was shown.
+
+   It re-renders from the tool results already in the browser: no model call,
+   no network call, and it works with the model switched off. */
+let shownTurn = null;
+
+function markShown(node){
+  if(shownTurn) shownTurn.classList.remove('showing');
+  shownTurn = node || null;
+  if(node) node.classList.add('showing');
+}
+
+/* The steps this turn produced that a panel can actually draw. A Tier-1
+   lookup answered in one line has no workspace view to return to, and a
+   button that opens nothing is worse than no button. */
+function drawableSteps(r){
+  return (r.tool_results || [])
+    .map((env, i) => ({env, call: (r.tool_calls || [])[i]}))
+    .filter(x => x.call && x.env && x.env.data && !x.env.data.error &&
+                 panelsFor(x.call.name, x.call.arguments || {}, x.env).length);
+}
+
+function showSteps(steps, label, node){
+  const last = steps[steps.length - 1];
+  setPanels(panelsFor(last.call.name, last.call.arguments || {}, last.env), label);
+  markShown(node);
+}
+
+function evidenceButton(steps, label, node){
+  if(!steps.length) return null;
+  const b = el('button', 'evidence-btn', 'Show workspace');
+  b.type = 'button';
+  b.title = 'Re-open the workspace view for this answer';
+  b.addEventListener('click', () => showSteps(steps, label, node));
+  node.appendChild(b);
+  return b;
+}
+
 /* --- drill-down: calls the tool endpoint directly, model or no model ----- */
 async function drill(crew_id, pairing_id, from_date){
   try{
     const env = await runTool('check_assignment', {crew_id, pairing_id, from_date});
-    setPanels(panelsFor('check_assignment', {}, env));
+    pushPanels(panelsFor('check_assignment', {}, env), 'Why ' + crew_id);
   }catch(e){
-    setPanels([(() => { const p = panel('Could not load');
-      p.appendChild(stateBlock('err','The engine did not answer', e.message)); return p; })()]);
+    pushPanels([(() => { const p = panel('Could not load');
+      p.appendChild(stateBlock('err','The engine did not answer', e.message)); return p; })()],
+      'Why ' + crew_id);
   }
 }
 
@@ -708,12 +866,13 @@ function buildStarters(){
     const b = el('button', null, label); b.type = 'button';
     b.addEventListener('click', async () => {
       if(modelReady){ $('#input').value = label; $('#composer').requestSubmit(); return; }
-      const m = say('Controller', label, 'you');
+      say('Controller', label, 'you');
       try{
         const env = await runTool(tool, args);
-        setPanels(panelsFor(tool, args, env));
         const n = say('Engine', env.summary, 'note');
         trace(n, [{name: tool}]);
+        const steps = drawableSteps({tool_results:[env], tool_calls:[{name:tool, arguments:args}]});
+        if(steps.length){ showSteps(steps, label, n); evidenceButton(steps, label, n); }
       }catch(e){ say('Engine', e.message, 'err'); }
     });
     host.appendChild(b);
@@ -730,17 +889,16 @@ $('#composer').addEventListener('submit', async ev => {
   try{
     const r = await api('/api/chat', {message: q});
     pending.remove();
-    const m = say('Advisor', r.reply);
+    const m = say('Advisor', renderAnswer(r.reply));
     trace(m, r.tool_calls);
     if(r.corrected) say('System', 'The first reply contained a figure no tool had computed, ' +
       'so it was sent back for correction.', 'note');
     // Invariant 1 and 2: draw from the tool results, in the order the agent
     // committed to them -- the last result is the one it answered from.
-    const drawable = (r.tool_results || []).map((env, i) => ({env, call: r.tool_calls[i]}))
-      .filter(x => x.call && x.env && x.env.data && !x.env.data.error);
-    if(drawable.length){
-      const last = drawable[drawable.length - 1];
-      setPanels(panelsFor(last.call.name, last.call.arguments, last.env));
+    const steps = drawableSteps(r);
+    if(steps.length){
+      showSteps(steps, q, m);
+      evidenceButton(steps, q, m);
     }
   }catch(e){
     pending.remove();
