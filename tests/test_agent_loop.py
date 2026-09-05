@@ -83,6 +83,26 @@ def test_rule_limits_are_not_flagged():
     assert g.ok
 
 
+def test_a_date_is_not_treated_as_a_figure():
+    """Found by an A/B on the live model: it wrote "three flights on 15 Sep and
+    three on 16 Sep", which is entirely true, and the gate failed it for the
+    ungrounded figures 15 and 16. Controllers say dates like that constantly,
+    and a gate that fires on correct answers gets switched off."""
+    t = Tools()
+    env = dispatch(t, "trace_disruption", {"crew_id": "C-1042", "pairing_id": "P-2291"})
+    renumber([env])
+
+    for dated in ("Three flights on 15 Sep and three on 16 Sep.",
+                  "Cover is needed from 15 September.",
+                  "Report at 06:00Z on 15 Sep 2026.",
+                  "Sep 15 has three flights."):
+        assert grounding.check(dated, [env]).ok, dated
+
+    # the exemption is for dates only; invented figures beside one still fail
+    g = grounding.check("It affects 999 passengers on 15 Sep.", [env])
+    assert not g.ok and g.ungrounded_numbers == ["999"]
+
+
 def test_a_figure_written_as_words_does_not_slip_past():
     """Digits were checked; prose was not. "Cancelling would cost one million
     two hundred and fifty thousand rupees" passed the whole gate while

@@ -75,11 +75,32 @@ The **summary** pre-empts a specific mistake. 486 is the day-1 count, and a
 model summing days would say 972. Saying so in the summary is cheaper and more
 reliable than hoping.
 
-The **missing** list is the anti-hallucination field. This result looks like an
-answer to "what should I do?" and is not one. Left unsaid, a model asked for a
-recommendation will invent a cost to complete the shape of the answer. That is
-not hypothetical: it is exactly how the invented INR 1,250,000 in Scenario B
-first appeared.
+The **missing** list is there because this result looks like an answer to "what
+should I do?" and is not one. The trap is in the payload: it carries
+`cancellation_cost_if_all_cancelled: 1500000`, a real, grounded cost sitting in
+a result that ranked no candidates. A model can quote it truthfully and
+recommend cancelling, having never seen a single cover option. Every check in
+the gate passes that answer, because every figure in it is real.
+
+**Measured, not assumed.** I ran the same question against `gpt-5.6-luna` twice
+with the same tool result, once with the `missing` list and once with it
+stripped, then forced an answer without further tool calls.
+
+With it, the model closed on this:
+
+> "No replacement ranking or cost has been established yet, so **do not select a
+> substitute or cancel based on this impact check alone.**"
+
+Without it, the model still self-limited — "I can't rank or confirm a
+replacement from the available results" — but never named the boundary or
+warned against acting.
+
+So on this trial the field bought an explicit refusal rather than preventing a
+fabrication. An earlier draft of this document claimed the model "will invent a
+cost to complete the shape of the answer"; one A/B does not support that, and
+the sentence has been corrected. The historical evidence for invention is real
+but comes from a different configuration, described in Scenario B: the steer was
+moved from the tool result into the system prompt, and the invention followed.
 
 **Round 2.** Steered by `missing`, the model calls `resolve_cover(pairing_id=
 "P-2291", vacated_by="C-1042")`, which returns the ranked options, the pricing

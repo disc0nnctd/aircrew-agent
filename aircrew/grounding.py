@@ -60,6 +60,19 @@ MAGNITUDE_RE = re.compile(
     r"\b(hundreds?|thousands?|lakhs?|crores?|millions?|billions?)\b", re.I
 )
 
+# A day written next to its month is a date, not a figure. Controllers say
+# "15 Sep" constantly, and the gate was failing correct answers for it: an A/B
+# on the live model produced "three flights on 15 Sep and three on 16 Sep",
+# which is entirely true and cost a corrective round. A gate that fires on
+# correct answers is a gate that gets switched off.
+MONTHS = r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
+DATE_NUM_RE = re.compile(
+    r"(?:\b(?:" + MONTHS + r")[a-z]*\.?\s+\d{1,2}\b"      # Sep 15
+    r"|\b\d{1,2}\s*(?:st|nd|rd|th)?\s+(?:" + MONTHS + r")[a-z]*\.?"  # 15 Sep
+    r"(?:\s+(?:19|20)\d\d)?)",                            # 15 Sep 2026
+    re.I,
+)
+
 # Figures that are part of the vocabulary rather than a computed result.
 ALWAYS_OK = {
     "0", "1", "2", "3", "4", "5", "6", "7",       # small counts, rule ordinals
@@ -311,11 +324,14 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
 
     # Numbers the model typed itself, outside any placeholder.
     typed = CLAIM_RE.sub("", reply)
+    date_spans = [m.span() for m in DATE_NUM_RE.finditer(typed)]
     ungrounded = []
     for m in NUMBER_RE.finditer(typed):
         n = _norm_num(m.group(1))
         if n in ALWAYS_OK or n in figures:
             continue
+        if any(a <= m.start() and m.end() <= b for a, b in date_spans):
+            continue  # "15 Sep" is a date the controller said, not a figure
         ungrounded.append(m.group(1))
 
     # A verdict with no tool result behind it at all.
