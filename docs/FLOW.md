@@ -28,15 +28,15 @@ controller question
   model writes an answer, citing {{claim:c3}}
       |
       v
-  the claim gate                           <- four checks, below
+  the claim gate                           <- five checks, below
       |
       +-- passes --> answer + workspace panels, both from the same result
       |
       +-- fails ---> one corrective turn --> still failing --> answer withheld
 ```
 
-The gate runs four checks on every reply. Three of them exist because a
-specific failure was observed in a live run.
+The gate runs five checks on every reply. Four of them exist because a specific
+failure was observed in a live run, not because they seemed prudent.
 
 | # | Check | Catches |
 | --- | --- | --- |
@@ -44,6 +44,7 @@ specific failure was observed in a live run.
 | 2 | **Ungrounded figures** | a number the model typed that no tool returned this turn |
 | 3 | **Mislabelled figures** | a number that *is* real, attached to the wrong kind of thing |
 | 4 | **Unknown or malformed claim id** | a citation this turn cannot satisfy, and raw placeholder text |
+| 5 | **Figures written as words** | "twelve lakh rupees", which every digit-based check above is blind to |
 
 ---
 
