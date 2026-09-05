@@ -83,6 +83,35 @@ def test_rule_limits_are_not_flagged():
     assert g.ok
 
 
+def test_a_figure_written_as_words_does_not_slip_past():
+    """Digits were checked; prose was not. "Cancelling would cost one million
+    two hundred and fifty thousand rupees" passed the whole gate while
+    "INR 1,250,000" was caught, which made the guarantee a formatting
+    preference. Only magnitude words are matched, never "three" or "both", so
+    ordinary counting language is untouched."""
+    t = Tools()
+    env = dispatch(t, "trace_disruption", {"crew_id": "C-1042", "pairing_id": "P-2291"})
+    renumber([env])
+
+    for prose in ("Cancelling would cost one million two hundred and fifty thousand rupees.",
+                  "Roughly twelve lakh fifty thousand rupees.",
+                  "It costs a few hundred rupees."):
+        g = grounding.check(prose, [env])
+        assert not g.ok, prose
+        assert g.spelled_figures, prose
+
+    # counting words a correct reply actually uses must not trip it
+    for fine in ("Three legal options tie at the same cost.",
+                 "Both days of the pairing are affected.",
+                 "486 passengers are booked on day 1.",
+                 "3 flights uncovered on day 1."):
+        assert not grounding.check(fine, [env]).spelled_figures, fine
+
+    # nothing the engine writes may ever trip it
+    for text in [env["summary"]] + [c["text"] for c in env["claims"]] + env["missing"]:
+        assert not grounding.MAGNITUDE_RE.search(text), text
+
+
 def test_a_real_figure_under_the_wrong_label_is_caught():
     """The gate's known blind spot, closed. "The delay costs 486" passes every
     other check because 486 really is in this turn's results -- as a passenger

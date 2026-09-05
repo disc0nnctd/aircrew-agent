@@ -247,6 +247,64 @@ leaving the previous question's evidence on screen.
 
 ---
 
+## Is a regex safe for this?
+
+Not on its own, and it is worth being precise about what it does and does not
+carry.
+
+**The safety property does not come from the regexes.** It comes from two
+structural facts: no tool accepts a cost, a count or a verdict as an argument,
+so a remembered figure has nowhere to enter; and a figure written as
+`{{claim:c3}}` is substituted from the engine's own text, so the model never
+types it. Those hold regardless of pattern matching. The regexes are a
+**backstop** for the case where the model types a figure itself, and a backstop
+should be judged on what it misses.
+
+**So I tried to break it.** Fifteen realistic mislabels, phrased the way a model
+actually writes: **9 caught, 6 missed.** The misses are all the same shape, a
+figure with no kind word near it:
+
+```
+no    The cancellation is 486.
+no    Total: 486.
+no    That comes to 486.
+no    486 will be charged.
+```
+
+The check needs the sentence to say what it thinks it is quoting. When the
+sentence says nothing, there is nothing to contradict, so it stays silent. That
+is the conservative failure and the right one, but it is a real hole: this check
+raises the cost of a mislabel, it does not eliminate it.
+
+**One miss was much worse than the others, and it was not in the label check at
+all.** A figure written as prose was invisible to *every* digit-based check:
+
+```
+ok=False  ungrounded=['1,250,000']   Cancelling would cost INR 1,250,000.
+ok=True   ungrounded=[]              Cancelling would cost one million two
+                                     hundred and fifty thousand rupees.
+```
+
+The gate was enforcing a formatting preference rather than a guarantee. Fixed by
+matching magnitude words — `hundred, thousand, lakh, crore, million, billion` —
+and only those, never "three" or "both", so ordinary counting language is
+untouched. Measured against every string the engine emits and every reply
+captured in the live runs: **zero of 36 would be flagged**, and all four
+spelled-out inventions are caught.
+
+**What that episode says about regexes here:** they are safe in the direction
+that matters, because every rule was tuned to prefer silence over a false alarm
+and each was measured for false positives before it shipped. They are not
+complete, and both holes above were found by attacking the check rather than by
+reasoning about it.
+
+**Where a regex would be the wrong tool entirely** is anything adversarial. If
+this were a security boundary — untrusted input trying to evade a filter — a
+pattern list would be indefensible, because the attacker adapts and the pattern
+does not. It is defensible here because the "adversary" is a cooperative model
+making ordinary mistakes, and because the expensive failure is already prevented
+structurally. A regex is a reasonable net under a floor. It is not a floor.
+
 ## Where an LLM validator would actually earn its place
 
 Checks 2, 3 and 4 are mechanisms, and a mechanism beats a model every time: it

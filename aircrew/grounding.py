@@ -47,6 +47,19 @@ VERDICT_RE = re.compile(
     re.I,
 )
 
+# A figure written as prose is invisible to a check that looks for digits.
+# "Cancelling would cost one million two hundred and fifty thousand rupees"
+# passed every test above while "INR 1,250,000" was caught, which made the
+# whole gate a formatting preference rather than a guarantee.
+#
+# Only magnitude words are matched, not "three" or "both": the engine always
+# emits figures as digits, so a magnitude word in a reply is prose standing in
+# for a number. Measured against every string the engine produces and every
+# reply captured in the live runs: zero of 36 would be flagged.
+MAGNITUDE_RE = re.compile(
+    r"\b(hundreds?|thousands?|lakhs?|crores?|millions?|billions?)\b", re.I
+)
+
 # Figures that are part of the vocabulary rather than a computed result.
 ALWAYS_OK = {
     "0", "1", "2", "3", "4", "5", "6", "7",       # small counts, rule ordinals
@@ -151,6 +164,7 @@ class Grounding:
     rendered: str
     claims_used: list[str]
     mislabelled_figures: list[dict] = field(default_factory=list)
+    spelled_figures: list[str] = field(default_factory=list)
 
     def corrective_prompt(self) -> str:
         bits = []
@@ -158,6 +172,11 @@ class Grounding:
             bits.append(
                 "these figures are not in any tool result from this turn: "
                 + ", ".join(self.ungrounded_numbers)
+            )
+        if self.spelled_figures:
+            bits.append(
+                "you wrote a figure as words (" + ", ".join(self.spelled_figures)
+                + "); every figure must be a digit that came from a tool result"
             )
         for f in self.mislabelled_figures:
             bits.append(
@@ -310,11 +329,16 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
     # Checked on the rendered text: a claim's own wording is correct by
     # construction, so only what the model typed itself can be mislabelled.
     wrong_label = mislabelled(typed, tool_results)
+    # A magnitude word is a number written as prose, and the digit checks
+    # above cannot see it.
+    spelled = sorted({m.group(0).lower() for m in MAGNITUDE_RE.finditer(typed)})
     return Grounding(
-        ok=not ungrounded and not unbacked and not unknown_claim and not wrong_label,
+        ok=(not ungrounded and not unbacked and not unknown_claim
+            and not wrong_label and not spelled),
         ungrounded_numbers=sorted(set(ungrounded)),
         unbacked_verdicts=unbacked,
         rendered=rendered,
         claims_used=used,
         mislabelled_figures=wrong_label,
+        spelled_figures=spelled,
     )
