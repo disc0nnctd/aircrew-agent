@@ -535,13 +535,20 @@ class Engine:
                 # artefact of running all seven checks anyway.
                 first_rule = breaches[0].rule
                 reasons = [b for b in breaches if b.rule == first_rule]
+                # `reason` carries every finding under the first failing rule,
+                # joined, and that is what the answer keys grade and what the
+                # panel shows. A structured copy of the same findings used to
+                # ride along here as `all_breaches`: 13,232 of the 17,445
+                # characters this list costs, read by nothing -- not the
+                # workspace, not the scoreboard, not the keys. A tool result is
+                # context the model pays for on every turn, so it carries what
+                # is used and not what might one day be.
                 exclusions.append(
                     {
                         "crew_id": crew_id,
                         "rule": first_rule,
                         "rule_text": self.ds.rule_text[first_rule],
                         "reason": "; ".join(b.render() for b in reasons),
-                        "all_breaches": [b.to_dict() for b in breaches],
                     }
                 )
                 continue

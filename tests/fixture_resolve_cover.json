@@ -318,31 +318,7 @@
     "crew_id": "C-2087",
     "rule": "RULE-DUTY-02",
     "rule_text": "Max 60 duty hours in any 7 consecutive calendar days (inclusive of duty date).",
-    "reason": "RULE-DUTY-02: would exceed 60h/7d by 1h20m on 2026-09-15 (total 61.33h); RULE-DUTY-02: would exceed 60h/7d by 1h05m on 2026-09-16 (total 61.08h)",
-    "all_breaches": [
-     {
-      "rule": "RULE-DUTY-02",
-      "text": "Max 60 duty hours in any 7 consecutive calendar days (inclusive of duty date).",
-      "limit": 60,
-      "actual": 61.33,
-      "excess": 1.33,
-      "context": {
-       "date": "2026-09-15"
-      },
-      "message": "RULE-DUTY-02: would exceed 60h/7d by 1h20m on 2026-09-15 (total 61.33h)"
-     },
-     {
-      "rule": "RULE-DUTY-02",
-      "text": "Max 60 duty hours in any 7 consecutive calendar days (inclusive of duty date).",
-      "limit": 60,
-      "actual": 61.08,
-      "excess": 1.08,
-      "context": {
-       "date": "2026-09-16"
-      },
-      "message": "RULE-DUTY-02: would exceed 60h/7d by 1h05m on 2026-09-16 (total 61.08h)"
-     }
-    ]
+    "reason": "RULE-DUTY-02: would exceed 60h/7d by 1h20m on 2026-09-15 (total 61.33h); RULE-DUTY-02: would exceed 60h/7d by 1h05m on 2026-09-16 (total 61.08h)"
    },
    {
     "crew_id": "C-3305",
@@ -354,691 +330,103 @@
     "crew_id": "C-3315",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-2091",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-5837",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only 10.75h rest before P-2204 on 2026-09-17 (downstream conflict)",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 10.75,
-      "excess": 1.25,
-      "context": {
-       "follower": "P-2204",
-       "predecessor": "COVER",
-       "date": "2026-09-17",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 10.75h rest before P-2204 on 2026-09-17 (downstream conflict)"
-     }
-    ]
+    "reason": "RULE-REST-04: only 10.75h rest before P-2204 on 2026-09-17 (downstream conflict)"
    },
    {
     "crew_id": "C-3940",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only -6.75h rest before COVER on 2026-09-15 (rest conflict); double-booked: P-2202 overlaps COVER on 2026-09-15",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -6.75,
-      "excess": 18.75,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2202",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 6.75
-      },
-      "message": "RULE-REST-04: only -6.75h rest before COVER on 2026-09-15 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2202 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2202",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 6.75,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2202 overlaps COVER on 2026-09-15"
-     }
-    ]
+    "reason": "RULE-REST-04: only -6.75h rest before COVER on 2026-09-15 (rest conflict); double-booked: P-2202 overlaps COVER on 2026-09-15"
    },
    {
     "crew_id": "C-3187",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only 10.0h rest before P-2203 on 2026-09-16 (downstream conflict); RULE-REST-04: only -8.75h rest before COVER on 2026-09-16 (rest conflict); double-booked: P-2203 overlaps COVER on 2026-09-16",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 10.0,
-      "excess": 2.0,
-      "context": {
-       "follower": "P-2203",
-       "predecessor": "COVER",
-       "date": "2026-09-16",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 10.0h rest before P-2203 on 2026-09-16 (downstream conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -8.75,
-      "excess": 20.75,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2203",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 8.75
-      },
-      "message": "RULE-REST-04: only -8.75h rest before COVER on 2026-09-16 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2203 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2203",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 8.75,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2203 overlaps COVER on 2026-09-16"
-     }
-    ]
+    "reason": "RULE-REST-04: only 10.0h rest before P-2203 on 2026-09-16 (downstream conflict); RULE-REST-04: only -8.75h rest before COVER on 2026-09-16 (rest conflict); double-booked: P-2203 overlaps COVER on 2026-09-16"
    },
    {
     "crew_id": "C-2143",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only 11.25h rest before P-2211 on 2026-09-17 (downstream conflict)",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 11.25,
-      "excess": 0.75,
-      "context": {
-       "follower": "P-2211",
-       "predecessor": "COVER",
-       "date": "2026-09-17",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 11.25h rest before P-2211 on 2026-09-17 (downstream conflict)"
-     }
-    ]
+    "reason": "RULE-REST-04: only 11.25h rest before P-2211 on 2026-09-17 (downstream conflict)"
    },
    {
     "crew_id": "C-1938",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only -7.25h rest before COVER on 2026-09-15 (rest conflict); double-booked: P-2209 overlaps COVER on 2026-09-15",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -7.25,
-      "excess": 19.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2209",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 7.25
-      },
-      "message": "RULE-REST-04: only -7.25h rest before COVER on 2026-09-15 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2209 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2209",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 7.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2209 overlaps COVER on 2026-09-15"
-     }
-    ]
+    "reason": "RULE-REST-04: only -7.25h rest before COVER on 2026-09-15 (rest conflict); double-booked: P-2209 overlaps COVER on 2026-09-15"
    },
    {
     "crew_id": "C-5647",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only 10.5h rest before P-2210 on 2026-09-16 (downstream conflict); RULE-REST-04: only -9.25h rest before COVER on 2026-09-16 (rest conflict); double-booked: P-2210 overlaps COVER on 2026-09-16",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 10.5,
-      "excess": 1.5,
-      "context": {
-       "follower": "P-2210",
-       "predecessor": "COVER",
-       "date": "2026-09-16",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 10.5h rest before P-2210 on 2026-09-16 (downstream conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -9.25,
-      "excess": 21.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2210",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 9.25
-      },
-      "message": "RULE-REST-04: only -9.25h rest before COVER on 2026-09-16 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2210 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2210",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 9.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2210 overlaps COVER on 2026-09-16"
-     }
-    ]
+    "reason": "RULE-REST-04: only 10.5h rest before P-2210 on 2026-09-16 (downstream conflict); RULE-REST-04: only -9.25h rest before COVER on 2026-09-16 (rest conflict); double-booked: P-2210 overlaps COVER on 2026-09-16"
    },
    {
     "crew_id": "C-5820",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only 11.75h rest before P-2218 on 2026-09-17 (downstream conflict)",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 11.75,
-      "excess": 0.25,
-      "context": {
-       "follower": "P-2218",
-       "predecessor": "COVER",
-       "date": "2026-09-17",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 11.75h rest before P-2218 on 2026-09-17 (downstream conflict)"
-     }
-    ]
+    "reason": "RULE-REST-04: only 11.75h rest before P-2218 on 2026-09-17 (downstream conflict)"
    },
    {
     "crew_id": "C-1443",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only -6.25h rest before COVER on 2026-09-15 (rest conflict); double-booked: P-2216 overlaps COVER on 2026-09-15",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -6.25,
-      "excess": 18.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2216",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 6.25
-      },
-      "message": "RULE-REST-04: only -6.25h rest before COVER on 2026-09-15 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2216 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2216",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 6.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2216 overlaps COVER on 2026-09-15"
-     }
-    ]
+    "reason": "RULE-REST-04: only -6.25h rest before COVER on 2026-09-15 (rest conflict); double-booked: P-2216 overlaps COVER on 2026-09-15"
    },
    {
     "crew_id": "C-1017",
     "rule": "RULE-REST-04",
     "rule_text": "Min 12h rest between release and next report.",
-    "reason": "RULE-REST-04: only 11.0h rest before P-2217 on 2026-09-16 (downstream conflict); RULE-REST-04: only -8.25h rest before COVER on 2026-09-16 (rest conflict); double-booked: P-2217 overlaps COVER on 2026-09-16",
-    "all_breaches": [
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 11.0,
-      "excess": 1.0,
-      "context": {
-       "follower": "P-2217",
-       "predecessor": "COVER",
-       "date": "2026-09-16",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 11.0h rest before P-2217 on 2026-09-16 (downstream conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -8.25,
-      "excess": 20.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2217",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 8.25
-      },
-      "message": "RULE-REST-04: only -8.25h rest before COVER on 2026-09-16 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2217 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2217",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 8.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2217 overlaps COVER on 2026-09-16"
-     }
-    ]
+    "reason": "RULE-REST-04: only 11.0h rest before P-2217 on 2026-09-16 (downstream conflict); RULE-REST-04: only -8.25h rest before COVER on 2026-09-16 (rest conflict); double-booked: P-2217 overlaps COVER on 2026-09-16"
    },
    {
     "crew_id": "C-1671",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-1600",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -5.25,
-      "excess": 17.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2223",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 5.25
-      },
-      "message": "RULE-REST-04: only -5.25h rest before COVER on 2026-09-15 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2223 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2223",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 5.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2223 overlaps COVER on 2026-09-15"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-3231",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": 11.5,
-      "excess": 0.5,
-      "context": {
-       "follower": "P-2224",
-       "predecessor": "COVER",
-       "date": "2026-09-16",
-       "direction": "downstream conflict",
-       "overlap": false,
-       "overlap_hours": null
-      },
-      "message": "RULE-REST-04: only 11.5h rest before P-2224 on 2026-09-16 (downstream conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -7.25,
-      "excess": 19.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2224",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 7.25
-      },
-      "message": "RULE-REST-04: only -7.25h rest before COVER on 2026-09-16 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2224 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2224",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 7.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2224 overlaps COVER on 2026-09-16"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-2221",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-3721",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -3.25,
-      "excess": 15.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2230",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 3.25
-      },
-      "message": "RULE-REST-04: only -3.25h rest before COVER on 2026-09-15 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2230 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2230",
-       "date": "2026-09-15",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 3.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2230 overlaps COVER on 2026-09-15"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    },
    {
     "crew_id": "C-5392",
     "rule": "RULE-QUAL-05",
     "rule_text": "Crew must hold a valid rating for the assigned aircraft type.",
-    "reason": "RULE-QUAL-05: no A320 rating",
-    "all_breaches": [
-     {
-      "rule": "RULE-QUAL-05",
-      "text": "Crew must hold a valid rating for the assigned aircraft type.",
-      "limit": "A320",
-      "actual": "ATR72",
-      "excess": null,
-      "context": {
-       "aircraft_type": "A320",
-       "held": [
-        "ATR72"
-       ]
-      },
-      "message": "RULE-QUAL-05: no A320 rating"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": 12,
-      "actual": -5.25,
-      "excess": 17.25,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2231",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 5.25
-      },
-      "message": "RULE-REST-04: only -5.25h rest before COVER on 2026-09-16 (rest conflict)"
-     },
-     {
-      "rule": "RULE-REST-04",
-      "text": "Min 12h rest between release and next report.",
-      "limit": "no overlap",
-      "actual": "P-2231 overlaps COVER",
-      "excess": null,
-      "context": {
-       "follower": "COVER",
-       "predecessor": "P-2231",
-       "date": "2026-09-16",
-       "direction": "rest conflict",
-       "overlap": true,
-       "overlap_hours": 5.25,
-       "double_booked": true
-      },
-      "message": "double-booked: P-2231 overlaps COVER on 2026-09-16"
-     }
-    ]
+    "reason": "RULE-QUAL-05: no A320 rating"
    }
   ],
   "exclusions_by_rule": {

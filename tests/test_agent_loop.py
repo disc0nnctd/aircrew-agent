@@ -217,6 +217,25 @@ def test_a_blank_optional_argument_does_not_become_a_missing_one():
     assert "CONFIRMED" in good["summary"]
 
 
+def test_a_tool_result_carries_only_what_is_read():
+    """A tool result is context the model pays for on every turn of the
+    conversation, so it holds what something consumes and nothing else.
+
+    resolve_cover is the heaviest call in the product. Its exclusion list used
+    to carry `all_breaches`, a structured copy of the same findings already in
+    `reason`: 13,232 of 17,445 characters, read by no panel, no test and no
+    answer key. Dropping it took the whole result from ~5,800 tokens to
+    ~2,500."""
+    t = Tools()
+    env = dispatch(t, "resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"})
+    for x in env["data"]["exclusions"]:
+        assert set(x) == {"crew_id", "rule", "rule_text", "reason"}, sorted(x)
+        assert x["reason"], "the graded wording must survive"
+
+    size = len(json.dumps(env, default=str, ensure_ascii=False))
+    assert size < 13000, f"resolve_cover grew to {size} chars; it was 10,096"
+
+
 # --- the tools ------------------------------------------------------------
 def test_no_tool_accepts_a_cost_or_a_verdict():
     """There is nowhere for a remembered figure to enter the engine."""
