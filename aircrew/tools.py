@@ -406,7 +406,7 @@ class Tools:
                 {"legal": legal, "issues": d["rules"]["issues"]},
                 ALL_RULES,
                 short=("legal under all seven rules" if legal
-                       else "illegal: " + "; ".join(d["rules"]["issues"])),
+                       else "; ".join(d["rules"]["issues"])),
             ),
             claim(
                 "verdict",
@@ -415,7 +415,7 @@ class Tools:
                 {"callable": callable_, "reason": d["callable"]["reason"]},
                 ["reserve_pool.json", "RULE-BASE-07"],
                 short=("can be called out" if callable_
-                       else f"cannot be called out: {d['callable']['reason']}"),
+                       else d["callable"]["reason"]),
             ),
         ]
         return envelope(
@@ -491,10 +491,18 @@ class Tools:
             if "error" in d:
                 return envelope(d["error"], d)
             cl = [
-                claim("number", f"FDP after the delay is {d['fdp_after_delay']}h against a "
-                      f"{d['fdp_limit']}h limit for {d['sectors']} sectors",
-                      {"fdp": d["fdp_after_delay"], "limit": d["fdp_limit"]}, ["RULE-FDP-01"],
+                # Two figures, two claims. As one claim it could only offer
+                # its short form for whichever figure the model wanted, and the
+                # model wanted both: it cited this claim twice and wrote "the
+                # duty becomes 12.75h, against a 12.75h limit". Both figures
+                # were grounded and the sentence was false.
+                claim("number", f"FDP after the delay is {d['fdp_after_delay']}h",
+                      d["fdp_after_delay"], ["RULE-FDP-01"],
                       short=f"{d['fdp_after_delay']}h"),
+                claim("number", f"the FDP limit is {d['fdp_limit']}h for "
+                      f"{d['sectors']} sectors",
+                      d["fdp_limit"], ["RULE-FDP-01"],
+                      short=f"{d['fdp_limit']}h"),
                 claim("legality", "the rostered crew "
                       + ("BREACH RULE-FDP-01" if d["breach"] else "stay inside RULE-FDP-01"),
                       d["breach"], ["RULE-FDP-01"],
@@ -522,10 +530,20 @@ class Tools:
                 if with_recovery
                 else self.e.station_closure_impact(station, on_date, start_utc, end_utc)
             )
-            need = d.get("flights_needing_recrew", [])
+            # An impact call does not assess crew at all. Defaulting the
+            # missing field to an empty list turned "not checked" into "zero
+            # breaches" -- in the summary the model reads and on the screen the
+            # controller reads -- while the same closure with recovery on
+            # flags ten flights. An unasked question must not answer itself.
+            assessed = "flights_needing_recrew" in d
+            need = d.get("flights_needing_recrew") or []
+            d = dict(d, recovery_assessed=assessed)
             return envelope(
                 f"{len(d['affected_flight_ids'])} flights touch {station} while it is closed "
-                f"({d['window_utc']}); {len(need)} would push their crew past FDP.",
+                f"({d['window_utc']}); "
+                + (f"{len(need)} would push their crew past FDP."
+                   if assessed else
+                   "crew impact was not assessed in this result."),
                 d,
                 [
                     claim("list", f"{len(d['affected_flight_ids'])} flights affected: "
@@ -535,7 +553,10 @@ class Tools:
                           d["passengers_at_risk"], ["flights.json seats"],
                           short=str(d["passengers_at_risk"])),
                 ],
-                ["arrivals count as well as departures; the window is half-open"],
+                ["arrivals count as well as departures; the window is half-open"]
+                + ([] if assessed else
+                   ["no crew were checked here, so this establishes nothing "
+                    "about FDP, re-crewing or legality"]),
             )
 
         if kind == "cancellation":
@@ -620,10 +641,19 @@ class Tools:
         if not pairing_id:
             return envelope("resolve_cover needs pairing_id, or a vacancies list",
                             {"error": "pairing_id required"})
-        d = self.e.resolve_cover(pairing_id, role, vacated_by, from_date, exclude_crew, limit=limit)
+        # Ranked in full, then trimmed here. Asking the engine to trim made the
+        # tie count a function of how many rows were on screen: with limit=2 the
+        # claim said "2 legal options tie", with limit=1 the tie disappeared,
+        # and nine candidates were actually at that price. A presentation limit
+        # must not change an operational statement.
+        d = self.e.resolve_cover(pairing_id, role, vacated_by, from_date,
+                                 exclude_crew, limit=None)
         if "error" in d:
             return envelope(d["error"], d)
         rec = d["recommended"]
+        ranked = d["options"]
+        if limit is not None and limit < len(ranked):
+            d = dict(d, options=ranked[:limit], options_truncated=True)
         cl = [
             claim("number", f"{d['legal_candidate_count']} candidates are legal",
                   d["legal_candidate_count"], ALL_RULES,
@@ -643,7 +673,7 @@ class Tools:
             # candidates are tied" when two others were -- which is a figure
             # the gate cannot catch, because every number in the sentence is
             # real. Counting is the engine's job, so the engine counts.
-            tied = [o for o in d["options"]
+            tied = [o for o in ranked
                     if o.get("crew_id") and o["cost_inr"] == rec["cost_inr"]]
             if len(tied) > 1:
                 cl.append(
@@ -744,7 +774,7 @@ class Tools:
                        + ("legal" if legal else "illegal: " + "; ".join(r["data"]["rules"]["issues"])),
                        legal, ALL_RULES,
                        short=("legal" if legal
-                              else "illegal: " + "; ".join(r["data"]["rules"]["issues"])))],
+                              else "; ".join(r["data"]["rules"]["issues"])))],
             )
 
         if claim_kind == "crew_qualified":

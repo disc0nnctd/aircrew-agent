@@ -274,13 +274,18 @@ class Agent:
         if g.ok:
             return Turn(g.rendered, calls, results, g)
 
-        # One corrective turn. If the model cannot ground the figure the second
-        # time, the honest thing is to say so rather than print it anyway.
+        # One corrective turn, but not one corrective *round*. The correction
+        # is usually "call the tool that computes this", and a tier-3 question
+        # needs several calls to answer -- ranking each affected pairing, say.
+        # Allowing exactly one round and then forcing text produced the worst
+        # outcome available: "I cannot run the required recovery computation in
+        # this turn", on a question the engine can answer completely.
         self.messages.append({"role": "user", "content": g.corrective_prompt()})
-        msg = self._complete("auto")
-        self.messages.append(msg)
-
-        if msg.get("tool_calls"):
+        for remaining in range(self.max_rounds - 1, -1, -1):
+            msg = self._complete("auto" if remaining else "none")
+            self.messages.append(msg)
+            if not msg.get("tool_calls"):
+                break
             for tc in msg["tool_calls"]:
                 name, args = _call_of(tc)
                 result = dispatch(self.tools, name, args)
@@ -291,8 +296,6 @@ class Agent:
                     {"role": "tool", "tool_call_id": tc.get("id"),
                      "content": json.dumps(result, default=str, ensure_ascii=False)}
                 )
-            msg = self._complete("none")
-            self.messages.append(msg)
 
         g2 = grounding.check(msg.get("content") or "", results)
         if g2.ok:

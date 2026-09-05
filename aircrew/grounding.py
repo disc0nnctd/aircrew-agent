@@ -437,7 +437,9 @@ class Grounding:
             "tool that computes it -- check_assignment for legality, "
             "resolve_cover for cost and ranking, validate for a statement you "
             "want to check -- then answer using {{claim:ID}} placeholders for "
-            "the figures, or drop the claim."
+            "the figures, or drop the claim. Answer the controller's original "
+            "question; do not describe this correction or your previous draft, "
+            "which they never saw."
         )
 
 
@@ -561,16 +563,40 @@ def _fit(text: str, before: str) -> str:
 
 _WORD = re.compile(r"[A-Za-z]+")
 
+# A word or a rule id at the front of a short form. Never a figure: the leading
+# token is only ever dropped when it is letters, or an id like RULE-DUTY-02.
+_LEAD_TOKEN = re.compile(r"^\s*([A-Za-z][A-Za-z-]*|RULE-[A-Z]+-\d+)([:,]?)\s+")
 
-def _unrepeat(short: str, head: str) -> str:
-    """Drop the short form's last word when the model writes it again next.
+
+def _unrepeat(short: str, head: str, before: str = "") -> str:
+    """Drop what the model has just said, or is about to say, at the seam.
 
     A count keeps its noun -- "2 flights", not a bare "2" -- because the model
     writes "{{claim:c1}} operate BLR-BOM" and a lone digit leaves no subject.
     But it also writes "{{claim:c1}} certifications expire", and then the noun
-    is said twice. One word at the seam is the whole problem, so one word is
-    all this looks at; the figure itself is never touched.
+    is said twice.
+
+    The same collision happens on the other side, and worse, because a verdict
+    claim leads with its own label: "C-3305 is illegal for P-2291 under
+    RULE-DUTY-02 (maximum 60 duty hours in any 7 consecutive days): illegal:
+    RULE-DUTY-02: would exceed 60h/7d by 8h15m". Every word of that is the
+    engine's and it is still unreadable.
+
+    So a leading word is dropped when the model has already used it in this
+    sentence, and the trailing word when the model uses it next. Only whole
+    alphabetic words and rule ids are ever removed, so no figure can be.
     """
+    for _ in range(4):
+        m = _LEAD_TOKEN.match(short)
+        if not m or not short[m.end():].strip():
+            break
+        said = re.search(r"\b" + re.escape(m.group(1)) + r"\b",
+                         _sentences(before)[-1] if _sentences(before) else (before or ""),
+                         re.I)
+        if not said:
+            break
+        short = short[m.end():]
+
     tail_word = _WORD.findall(short)
     next_word = _WORD.match(head.lstrip("*_ "))
     if not tail_word or not next_word:
@@ -615,7 +641,7 @@ def _pick(claim: dict, before: str, after: str = "") -> str:
     # Otherwise the model is building a sentence around it and has supplied the
     # label itself, so the bare figure is what belongs in the gap.
     if short != text:
-        return _unrepeat(short, head)
+        return _unrepeat(short, head, tail)
 
     # No short form: drop whatever the model has already said, if anything.
     return _fit(text, before)

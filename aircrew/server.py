@@ -13,9 +13,11 @@ switched off, which is also the demo's safety net.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
+import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +29,64 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 _tools = Tools()
 _agent = None
 _agent_error: str | None = None
+
+# One conversation per desk, not one per process. The agent holds its own
+# history, which is what makes "C-3310 is also sick, now what?" work without a
+# pairing id -- and with a single shared agent it also made a second browser
+# inherit the first one's sick call, and made either browser's Clear wipe the
+# other. Two judges at one demo is enough to hit that.
+_desks: dict[str, object] = {}
+_desks_lock = threading.Lock()
+_desk_locks: dict[str, threading.Lock] = {}
+
+
+def desk_of(handler) -> str:
+    """Which conversation this request belongs to.
+
+    The browser sends a per-tab id. Anything without one -- curl, the CLI,
+    a health probe -- shares a single default desk, which is the old
+    behaviour and is correct for a single operator.
+    """
+    said = handler.headers.get("X-Desk-Session")
+    if not said:
+        cookie = handler.headers.get("Cookie") or ""
+        for part in cookie.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "session" and value:
+                said = value
+                break
+    return (said or "default")[:64]
+
+
+def desk_agent(desk: str):
+    """The agent for one desk, built from the same configuration as the rest.
+
+    A shallow copy shares the tools, the model and the transport; only the
+    message history is per desk, and that is the only mutable state a
+    conversation has.
+    """
+    base = get_agent()
+    if base is None:
+        return None
+    with _desks_lock:
+        agent = _desks.get(desk)
+        if agent is None:
+            agent = copy.copy(base)
+            agent.messages = list(base.messages[:1])
+            _desks[desk] = agent
+            _desk_locks[desk] = threading.Lock()
+        return agent
+
+
+def desk_lock(desk: str) -> threading.Lock:
+    """Serialise one desk's turns.
+
+    The server is threaded, and two overlapping questions on the same desk
+    would interleave appends into one message list -- producing a history that
+    never happened, in the component that is hardest to check.
+    """
+    with _desks_lock:
+        return _desk_locks.setdefault(desk, threading.Lock())
 
 
 def get_agent():
@@ -136,13 +196,16 @@ class Handler(BaseHTTPRequestHandler):
             # controller sees. The agent's own history lived on, so the next
             # question still carried the last one -- fine for a follow-up,
             # wrong for "start again" and wrong between two judges at a demo.
-            agent = get_agent()
+            desk = desk_of(self)
+            agent = desk_agent(desk)
             if agent is not None:
-                agent.reset()
-            return self._json({"ok": True})
+                with desk_lock(desk):
+                    agent.reset()
+            return self._json({"ok": True, "desk": desk})
 
         if self.path == "/api/chat":
-            agent = get_agent()
+            desk = desk_of(self)
+            agent = desk_agent(desk)
             if agent is None:
                 return self._json(
                     {
@@ -157,7 +220,8 @@ class Handler(BaseHTTPRequestHandler):
             if not msg:
                 return self._json({"error": "message required"}, 400)
             try:
-                turn = agent.ask(msg)
+                with desk_lock(desk):
+                    turn = agent.ask(msg)
             except Exception as exc:
                 traceback.print_exc()
                 return self._json({"error": "model call failed", "detail": str(exc)}, 502)

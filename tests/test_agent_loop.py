@@ -455,6 +455,52 @@ def test_a_single_flight_lookup_makes_no_comparison():
     assert d["claims"][0]["text"] == "1 flight matched"
 
 
+def test_the_fdp_figure_and_its_limit_are_separate_claims():
+    # As one claim the model could only cite it twice, and wrote "the duty
+    # becomes 12.75h, against a 12.75h limit". Both figures grounded, sentence
+    # false.
+    t = Tools()
+    r = dispatch(t, "simulate_disruption", {
+        "kind": "delay", "aircraft": "VT-DXA", "on_date": "2026-09-16",
+        "delay_hours": 1.5, "mode": "technical",
+    })
+    shorts = [c["short"] for c in r["claims"] if c["kind"] == "number"]
+    assert len({s for s in shorts if s.endswith("h")}) > 1, shorts
+
+
+def test_a_verdict_claim_does_not_repeat_the_label_the_model_wrote():
+    t = Tools()
+    r = dispatch(t, "check_assignment", {"crew_id": "C-3305", "pairing_id": "P-2291"})
+    renumber([r])
+    cid = r["claims"][0]["id"]
+    draft = ("C-3305 is illegal for P-2291 under RULE-DUTY-02 (maximum 60 duty "
+             "hours in any 7 consecutive days): {{claim:%s}}." % cid)
+    g = grounding.check(draft, [r])
+    assert g.ok, g
+    assert "illegal: RULE-DUTY-02" not in g.rendered, g.rendered
+    assert "would exceed 60h/7d" in g.rendered
+
+
+def test_the_corrective_turn_may_take_more_than_one_tool_round():
+    # A tier-3 question needs several calls to answer. Forcing text after one
+    # round produced "I cannot run the required computation in this turn" on a
+    # question the engine answers completely.
+    t = Tools()
+    a = _agent([
+        _Msg(tool_calls=[_Call("trace_disruption",
+                               {"crew_id": "C-1042", "pairing_id": "P-2291"})]),
+        _Msg("Cover costs INR 91,234."),                      # ungrounded
+        _Msg(tool_calls=[_Call("resolve_cover",
+                               {"pairing_id": "P-2291", "vacated_by": "C-1042"})]),
+        _Msg(tool_calls=[_Call("check_assignment",
+                               {"crew_id": "C-3310", "pairing_id": "P-2291"})]),
+        _Msg("C-3310 can cover it."),
+    ], t)
+    turn = a.ask("What should I do?")
+    assert turn.reply == "C-3310 can cover it.", turn.reply
+    assert len(turn.tool_calls) == 3, turn.tool_calls
+
+
 if __name__ == "__main__":
     import sys
 

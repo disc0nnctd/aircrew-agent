@@ -110,7 +110,6 @@ class ReviewAstra(unittest.TestCase):
         self.assertGreater(minimum_fdp, tail["fdp_limit"])
         self.assertNotEqual(tail["action"], "delay (crew legal)")
 
-    @unittest.expectedFailure
     def test_impact_only_closure_does_not_claim_zero_fdp_breaches(self):
         args = {"kind": "closure", "station": "BLR", "on_date": "2026-09-17",
                 "start_utc": "08:00", "end_utc": "14:00"}
@@ -119,7 +118,6 @@ class ReviewAstra(unittest.TestCase):
         self.assertEqual(len(full["data"]["flights_needing_recrew"]), 10)
         self.assertNotIn("0 would push their crew past FDP", impact["summary"])
 
-    @unittest.expectedFailure
     def test_presentation_limit_does_not_change_the_number_of_ties(self):
         args = {"pairing_id": "P-2201", "role": "Captain"}
         full = dispatch(self.tools, "resolve_cover", {**args, "limit": 100})
@@ -128,7 +126,6 @@ class ReviewAstra(unittest.TestCase):
                                   if "legal options tie" in c["text"])
         self.assertEqual(tie(full), tie(small))
 
-    @unittest.expectedFailure
     def test_two_browser_sessions_do_not_share_conversation_history(self):
         agent = _agent([_Msg("Ready."), _Msg("Ready.")], self.tools)
         with patch.object(server, "_agent", agent), patch.object(server.Handler, "log_message"):
