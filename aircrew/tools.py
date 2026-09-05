@@ -519,7 +519,14 @@ class Tools:
                 d,
                 cl,
                 ["downstream duties of the same crew are not re-checked here; "
-                 "use duty_timeline for the rest of their week"],
+                 "use duty_timeline for the rest of their week",
+                 # The reserve option is a role-and-tariff set, which is what
+                 # the published answer key computes and what this reproduces.
+                 # It names no individuals, so nobody's callout window or rest
+                 # has been tested -- and a controller reading "all satisfied"
+                 # would reasonably think otherwise.
+                 "a reserve option names roles and their tariff, not people; "
+                 "no individual's on-call window or rest has been checked here"],
             )
 
         if kind == "closure":
@@ -553,7 +560,12 @@ class Tools:
                           d["passengers_at_risk"], ["flights.json seats"],
                           short=str(d["passengers_at_risk"])),
                 ],
-                ["arrivals count as well as departures; the window is half-open"]
+                ["arrivals count as well as departures; the window is half-open",
+                 # Each delay is computed against the closure window alone, as
+                 # the published answer key does. Two legs on one tail can
+                 # therefore carry delays that could not both be flown.
+                 "each flight's delay is measured against the closure window on "
+                 "its own; delays are not propagated along an aircraft's rotation"]
                 + ([] if assessed else
                    ["no crew were checked here, so this establishes nothing "
                     "about FDP, re-crewing or legality"]),
