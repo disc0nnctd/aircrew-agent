@@ -21,7 +21,7 @@ system disagreed with itself.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # The documented form is {{claim:c3}}, but a model that writes {claim:c3}
 # once in twenty turns puts a raw token on a controller's screen, which
@@ -55,6 +55,94 @@ ALWAYS_OK = {
 }
 
 
+# A figure can be real and still be wrong: "the delay costs 486" when 486 is
+# this turn's passenger count passes every check above, because 486 genuinely
+# came from a tool. So the second question is not "is this number real?" but
+# "is it the right KIND of number for the sentence it is in?"
+#
+# Both halves are cheap to answer. The engine knows what each field holds, from
+# its name; the reply says what it thinks it is quoting, from the words around
+# the digits. A conflict between the two is a mislabel.
+#
+# This is deliberately conservative. It fires only when the figure lives in
+# fields of exactly one kind and the sentence clearly asserts a different one,
+# because a gate that fires on correct answers gets switched off.
+FIELD_KIND = [
+    ("money", r"cost|inr|price|fee|fare"),
+    ("people", r"passenger|seats|pax"),
+    ("hours", r"hours|fdp|rest|block|headroom"),
+    ("minutes", r"minutes|reachab"),
+    ("count", r"count|total_flights|sectors|plan_count"),
+]
+WORD_KIND = [
+    ("money", r"\b(inr|rs|rupees?|costs?|costing|price[ds]?|cheape[rs]t?)\b"),
+    ("people", r"\b(passengers?|pax|seats?)\b"),
+    ("hours", r"\b(hours?|rest|duty|fdp|headroom|block)\b"),
+    ("minutes", r"\b(minutes?|mins?)\b"),
+    ("count", r"\b(flights?|legs?|candidates?|options?|crew|plans?|pairings?|sectors?)\b"),
+]
+
+
+def _field_kind(path: str) -> str | None:
+    low = path.lower()
+    for kind, rx in FIELD_KIND:
+        if re.search(rx, low):
+            return kind
+    return None
+
+
+def _said_kinds(text: str, start: int, end: int, window: int = 28) -> set[str]:
+    """What the sentence around the number claims it is."""
+    ctx = text[max(0, start - window):end + window].lower()
+    return {kind for kind, rx in WORD_KIND if re.search(rx, ctx)}
+
+
+def _figure_fields(tool_results: list[dict]) -> dict[str, set[str]]:
+    """Every numeric value in this turn, and the field paths it came from."""
+    out: dict[str, set[str]] = {}
+
+    def walk(node, path=""):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}" if path else k)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, path + "[]")
+        elif isinstance(node, (int, float)) and not isinstance(node, bool):
+            out.setdefault(_norm_num(node), set()).add(path)
+
+    for r in tool_results:
+        walk(r.get("data"))
+    return out
+
+
+def mislabelled(reply: str, tool_results: list[dict]) -> list[dict]:
+    """Figures that are real but attached to the wrong kind of thing."""
+    fields = _figure_fields(tool_results)
+    found = []
+    for m in NUMBER_RE.finditer(reply):
+        raw = m.group(1)
+        norm = _norm_num(raw)
+        if norm in ALWAYS_OK:
+            # Small counts appear in every payload; "day 1" would flag forever.
+            continue
+        paths = fields.get(norm)
+        if not paths:
+            continue  # not a real figure: the ungrounded check owns that case
+        kinds = {k for k in (_field_kind(p) for p in paths) if k}
+        if len(kinds) != 1:
+            continue  # ambiguous source, so no confident verdict
+        said = {k for k in _said_kinds(reply, m.start(), m.end()) if k}
+        if said and not (said & kinds):
+            found.append({
+                "figure": raw,
+                "is": sorted(kinds)[0],
+                "written_as": sorted(said),
+                "fields": sorted(paths)[:3],
+            })
+    return found
+
+
 @dataclass
 class Grounding:
     ok: bool
@@ -62,6 +150,7 @@ class Grounding:
     unbacked_verdicts: bool
     rendered: str
     claims_used: list[str]
+    mislabelled_figures: list[dict] = field(default_factory=list)
 
     def corrective_prompt(self) -> str:
         bits = []
@@ -69,6 +158,12 @@ class Grounding:
             bits.append(
                 "these figures are not in any tool result from this turn: "
                 + ", ".join(self.ungrounded_numbers)
+            )
+        for f in self.mislabelled_figures:
+            bits.append(
+                f"{f['figure']} is a {f['is']} figure in this turn's results "
+                f"({', '.join(f['fields'])}), but you wrote it as "
+                f"{' or '.join(f['written_as'])}"
             )
         if self.unbacked_verdicts:
             bits.append(
@@ -212,10 +307,14 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
     # failed and regenerated rather than printed with {claim:c9} in the prose.
     leftover = bool(LEFTOVER_RE.search(rendered))
     unknown_claim = any(cid not in claims for cid in used) or leftover
+    # Checked on the rendered text: a claim's own wording is correct by
+    # construction, so only what the model typed itself can be mislabelled.
+    wrong_label = mislabelled(typed, tool_results)
     return Grounding(
-        ok=not ungrounded and not unbacked and not unknown_claim,
+        ok=not ungrounded and not unbacked and not unknown_claim and not wrong_label,
         ungrounded_numbers=sorted(set(ungrounded)),
         unbacked_verdicts=unbacked,
         rendered=rendered,
         claims_used=used,
+        mislabelled_figures=wrong_label,
     )

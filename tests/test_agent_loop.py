@@ -83,6 +83,41 @@ def test_rule_limits_are_not_flagged():
     assert g.ok
 
 
+def test_a_real_figure_under_the_wrong_label_is_caught():
+    """The gate's known blind spot, closed. "The delay costs 486" passes every
+    other check because 486 really is in this turn's results -- as a passenger
+    count. The engine knows what each field holds, the sentence says what it
+    thinks it is quoting, and a conflict between the two is a mislabel.
+
+    Deliberately conservative: it fires only when the figure lives in fields of
+    exactly one kind and the sentence clearly asserts a different one. A gate
+    that fires on correct answers gets switched off."""
+    t = Tools()
+    trace = dispatch(t, "trace_disruption", {"crew_id": "C-1042", "pairing_id": "P-2291"})
+    cover = dispatch(t, "resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"})
+    renumber([trace, cover])
+
+    for wrong in ("The delay costs 486.",
+                  "Cancelling strands 15,00,000 passengers.",
+                  "There are 18,500 passengers at risk."):
+        g = grounding.check(wrong, [trace, cover])
+        assert not g.ok, wrong
+        assert g.mislabelled_figures, wrong
+        assert "written as" in g.corrective_prompt() or "but you wrote it as" in g.corrective_prompt()
+
+    # the same figures, correctly labelled, must pass
+    for right in ("486 passengers are booked on day 1.",
+                  "Cancelling all six flights costs INR 15,00,000.",
+                  "Assign C-3310 at INR 18,500.",
+                  "5 candidates are legal and 19 were excluded."):
+        assert grounding.check(right, [trace, cover]).ok, right
+
+    # and no claim the engine wrote may ever trip it
+    for env in (trace, cover):
+        for c in env["claims"]:
+            assert not grounding.mislabelled(c["text"], [trace, cover]), c["text"]
+
+
 def test_a_single_brace_placeholder_is_still_substituted():
     """The documented form is {{claim:c3}}. luna writes {claim:c3} often enough
     that raw tokens reached the screen in a live run, which looks broken and
