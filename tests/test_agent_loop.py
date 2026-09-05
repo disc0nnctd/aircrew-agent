@@ -525,6 +525,37 @@ def test_the_engine_runs_with_no_filesystem():
                 == dispatch(onfile, name, args)["data"]), name
 
 
+def test_an_empty_reply_is_never_published():
+    # An empty string states no figure and no verdict, so it passes every
+    # check in the gate and would reach the screen as a blank answer -- which
+    # reads as agreement. Cloudflare's gpt-oss does exactly this: it spends the
+    # turn in `reasoning` and returns empty `content`.
+    t = Tools()
+    a = _agent([
+        _Msg(tool_calls=[_Call("resolve_cover",
+                               {"pairing_id": "P-2291", "vacated_by": "C-1042"})]),
+        _Msg(""),          # the empty answer
+        _Msg(""),          # and again when asked for it directly
+    ], t)
+    turn = a.ask("What should I do?")
+    assert turn.reply.strip()
+    assert "returned nothing" in turn.reply
+
+
+def test_a_tool_calling_message_keeps_a_content_field():
+    # Cloudflare Workers AI rejects an assistant message without `content`
+    # ("required properties at '/messages/2' are 'role,content'"), which is
+    # what every tool-calling turn looks like once nulls are stripped.
+    t = Tools()
+    a = _agent([
+        _Msg(tool_calls=[_Call("crew_profile", {"crew_id": "C-1042"})]),
+        _Msg("C-1042 is a Captain."),
+    ], t)
+    a.ask("Who is C-1042?")
+    assistant = [m for m in a.messages if m.get("role") == "assistant"]
+    assert all("content" in m for m in assistant), assistant
+
+
 if __name__ == "__main__":
     import sys
 

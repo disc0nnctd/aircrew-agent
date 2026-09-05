@@ -175,6 +175,17 @@ body.dev .devonly{display:inline-block}
    lose track of what the right-hand pane is showing. */
 .msg.showing .body{border-left:2px solid var(--accent);padding-left:9px}
 .msg.showing.you .body{padding-left:12px}
+.settings .field{display:grid;grid-template-columns:100px 1fr;gap:10px;
+  align-items:center;margin:10px 0}
+.settings .field span{color:var(--dim);font-size:12px}
+.settings input,.settings select{background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:4px;padding:6px 8px;font:inherit;
+  font-size:13px;width:100%}
+.settings input:focus,.settings select:focus{outline:none;border-color:var(--accent)}
+.settings .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.settings .note{color:var(--dim);font-size:12px;margin:6px 0 0}
+.settings button.primary{background:var(--accent);color:#08131f;border:0;
+  border-radius:4px;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer}
 .evidence-btn{margin-left:auto;padding:2px 9px;font:inherit;font-size:11px;
   color:var(--ink-dim);background:var(--panel-2);
   border:1px solid var(--line-2);border-radius:999px;cursor:pointer}
@@ -399,6 +410,8 @@ pre.draft{margin:0;padding:12px;font-family:var(--mono);font-size:12.5px;white-s
           title="Show the system prompt and the tool surface">boundary</button>
   <button id="flow" class="ghost" type="button"
           title="Show how one question becomes an answer">flow</button>
+  <button id="settings" class="ghost" type="button"
+          title="Choose the model provider for this desk">settings</button>
   <button id="brief" class="ghost devonly" type="button"
           title="The technical and agentic boundary, for presenting">briefing</button>
   <label class="toggle" title="Show the presentation briefing and tool tiers">
@@ -700,6 +713,142 @@ async function showBoundary(){
 }
 
 /* --- the same boundary, as one picture ---------------------------------- */
+/* --- settings: which model answers ------------------------------------
+
+   The engine never needs one; the chat does. A controller at a demo may have
+   a free key for one provider and not another, so the choice belongs on the
+   screen rather than in the environment the server was started with. The key
+   is posted to the local server and held for this desk only -- it is never
+   written to disk, never logged, and never sent back to the browser. */
+/* A Worker isolate does not outlive one request, so a deployed build has
+   nowhere to keep either the key or the conversation. Both travel with the
+   question instead. The key lives in sessionStorage, which the browser drops
+   when the tab closes; it is never written to localStorage and never logged.
+   The local server ignores both fields and uses its own per-desk config. */
+const PROVIDER_KEY = 'crew-ops-provider';
+
+function savedKey(){
+  try { return (JSON.parse(sessionStorage.getItem(PROVIDER_KEY) || '{}')).api_key; }
+  catch(e){ return ''; }
+}
+function rememberProvider(cfg){
+  try { sessionStorage.setItem(PROVIDER_KEY, JSON.stringify(cfg)); } catch(e){}
+}
+function deskProvider(){
+  let provider = null;
+  try { provider = JSON.parse(sessionStorage.getItem(PROVIDER_KEY) || 'null'); }
+  catch(e){}
+  const history = [...document.querySelectorAll('#log .msg')].map(m => {
+    const who = (m.querySelector('.who') || {}).textContent;
+    const body = m.querySelector('.body');
+    if(!body) return null;
+    if(who === 'Controller') return {role: 'user', content: body.innerText.trim()};
+    if(who === 'Advisor') return {role: 'assistant', content: body.innerText.trim()};
+    return null;
+  }).filter(Boolean).slice(0, -1);
+  return provider ? {provider, history} : {history};
+}
+
+async function showSettings(){
+  const state = await getJSON('/api/provider');
+  modal('Model provider', () => {
+    const wrap = el('div', 'settings');
+    const now = state.current || {};
+    wrap.appendChild(el('p', 'note',
+      now.model
+        ? 'Answering now with ' + now.model + ' (' + (now.source === 'settings'
+            ? 'chosen here' : 'from the environment') + ').'
+        : 'No model configured. The workspace still works without one.'));
+
+    const row = (label, node) => {
+      const d = el('label', 'field');
+      d.appendChild(el('span', null, label));
+      d.appendChild(node);
+      wrap.appendChild(d);
+      return node;
+    };
+
+    const preset = el('select');
+    preset.appendChild(new Option('choose a provider…', ''));
+    Object.entries(state.providers || {}).forEach(([k, p]) =>
+      preset.appendChild(new Option(p.label, k)));
+    row('Provider', preset);
+
+    const url = el('input');
+    url.type = 'url';
+    url.placeholder = 'https://api.example.com/v1';
+    url.value = now.base_url || '';
+    row('Base URL', url);
+
+    const key = el('input');
+    key.type = 'password';
+    key.autocomplete = 'off';
+    key.placeholder = now.key_set ? 'stored for this desk — leave blank to keep'
+                                  : 'paste the API key';
+    row('API key', key);
+
+    const model = el('input');
+    model.setAttribute('list', 'model-options');
+    model.placeholder = 'model name';
+    model.value = now.model || '';
+    row('Model', model);
+    const list = el('datalist');
+    list.id = 'model-options';
+    wrap.appendChild(list);
+
+    const note = el('p', 'note');
+    wrap.appendChild(note);
+
+    const setModels = names => {
+      list.textContent = '';
+      names.forEach(n => list.appendChild(new Option(n)));
+    };
+
+    preset.addEventListener('change', () => {
+      const p = (state.providers || {})[preset.value];
+      if(!p) return;
+      url.value = p.base_url;
+      setModels(p.models || []);
+      if((p.models || []).length) model.value = p.models[0];
+      note.textContent = p.note || '';
+    });
+
+    const buttons = el('div', 'actions');
+    const fetchBtn = el('button', 'ghost', 'list models');
+    fetchBtn.type = 'button';
+    fetchBtn.addEventListener('click', async () => {
+      note.textContent = 'asking the provider…';
+      const r = await api('/api/models',
+                          {base_url: url.value.trim(), api_key: key.value});
+      if(r.error){ note.textContent = 'could not list models: ' + r.error; return; }
+      setModels(r.models || []);
+      note.textContent = (r.models || []).length
+        ? r.models.length + ' models offered — the box below autocompletes'
+        : 'the provider listed none; type the model name';
+    });
+    buttons.appendChild(fetchBtn);
+
+    const save = el('button', 'primary', 'use this model');
+    save.type = 'button';
+    save.addEventListener('click', async () => {
+      note.textContent = 'saving…';
+      const r = await api('/api/provider', {
+        base_url: url.value.trim(), model: model.value.trim(),
+        api_key: key.value,
+      });
+      if(r.error){ note.textContent = r.error + (r.detail ? ': ' + r.detail : ''); return; }
+      rememberProvider({base_url: url.value.trim(), model: model.value.trim(),
+                        api_key: key.value || (savedKey() || '')});
+      key.value = '';
+      note.textContent = 'now answering with ' + r.current.model;
+      health();
+    });
+    buttons.appendChild(save);
+    wrap.appendChild(buttons);
+    return wrap;
+  }, 'settings-modal');
+}
+
 function showFlow(){
   const BOX = (x, y, w, h, title, sub, tone) => `
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6"
@@ -1799,7 +1948,7 @@ $('#composer').addEventListener('submit', async ev => {
   say('Controller', q, 'you');
   const pending = say('Advisor', 'Working…', 'note');
   try{
-    const r = await api('/api/chat', {message: q});
+    const r = await api('/api/chat', {message: q, ...deskProvider()});
     pending.remove();
     // A table can put the rows this answer names first, so it has to know what
     // they are before anything is drawn.
@@ -1841,6 +1990,7 @@ $('#input').addEventListener('keydown', e => {
   $('#boundary').addEventListener('click', () => showBoundary().catch(e =>
     modal('The boundary', () => stateBlock('err','Could not load it', e.message))));
   $('#flow').addEventListener('click', showFlow);
+  $('#settings').addEventListener('click', showSettings);
   $('#brief').addEventListener('click', showBriefing);
 
   // Dev view: the briefing button and the tool tiers. Off by default, because

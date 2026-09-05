@@ -221,7 +221,13 @@ class Agent:
         msg = choices[0].get("message") or {}
         # Drop nulls before the message goes back into the history: some
         # gateways reject a replayed `"content": null` alongside tool_calls.
-        return {k: v for k, v in msg.items() if v is not None}
+        # But `content` cannot simply be dropped -- Cloudflare Workers AI
+        # rejects an assistant message without it ("required properties at
+        # '/messages/2' are 'role,content'"), which is how a tool-calling turn
+        # always looks. An empty string satisfies both.
+        clean = {k: v for k, v in msg.items() if v is not None}
+        clean.setdefault("content", "")
+        return clean
 
     # ------------------------------------------------------------------
     def reset(self) -> None:
@@ -235,41 +241,81 @@ class Agent:
 
     # ------------------------------------------------------------------
     def ask(self, question: str) -> Turn:
-        """One controller question, through as many tool rounds as it needs."""
+        """One controller question, through as many tool rounds as it needs.
+
+        The loop itself is `drive()`, which does no I/O. This is the local
+        driver: it performs each completion with urllib and feeds the answer
+        back. A Cloudflare Worker drives the same generator with `fetch`,
+        because a Worker cannot block on a socket -- and one loop that both
+        run beats two loops that have to stay in agreement.
+        """
+        loop = self.drive(question)
+        try:
+            choice = next(loop)
+            while True:
+                choice = loop.send(self._complete(choice))
+        except StopIteration as done:
+            return done.value
+
+    # ------------------------------------------------------------------
+    def drive(self, question: str):
+        """The loop, without I/O.
+
+        Yields the `tool_choice` for the next completion; expects the raw
+        assistant message back through `send`. Returns a finished Turn.
+        Tool dispatch and the claim gate stay inside, because they are pure
+        Python and belong to the loop rather than to the transport.
+        """
         self.messages.append({"role": "user", "content": question})
         results: list[dict] = []
         calls: list[dict] = []
 
-        for _ in range(self.max_rounds):
-            msg = self._complete("auto")
-            self.messages.append(msg)
-
-            if not msg.get("tool_calls"):
-                return self._finish(msg.get("content") or "", calls, results)
-
+        def run_tools(msg):
             for tc in msg["tool_calls"]:
                 name, args = _call_of(tc)
                 result = dispatch(self.tools, name, args)
                 calls.append({"name": name, "arguments": args})
                 results.append(result)
                 renumber(results)
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.get("id"),
-                        "content": json.dumps(result, default=str, ensure_ascii=False),
-                    }
-                )
+                self.messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id"),
+                    "content": json.dumps(result, default=str, ensure_ascii=False),
+                })
 
-        return self._finish(
-            "I ran out of tool rounds before reaching an answer. The workspace "
-            "shows what was computed so far.",
-            calls,
-            results,
-        )
+        reply = ("I ran out of tool rounds before reaching an answer. The "
+                 "workspace shows what was computed so far.")
+        for _ in range(self.max_rounds):
+            msg = yield "auto"
+            self.messages.append(msg)
+            if msg.get("tool_calls"):
+                run_tools(msg)
+                continue
+            reply = msg.get("content") or ""
+            if not reply.strip():
+                # Some providers spend the turn in `reasoning` and return an
+                # empty `content` -- Cloudflare's gpt-oss does it on the round
+                # after a tool call. Publishing that is a blank screen where an
+                # answer should be, so ask once for the answer itself.
+                self.messages.append({
+                    "role": "user",
+                    "content": "Your last reply was empty. Write the answer for "
+                               "the controller now, in plain sentences, citing "
+                               "figures as {{claim:ID}} placeholders.",
+                })
+                msg = yield "none"
+                self.messages.append(msg)
+                reply = msg.get("content") or ""
+            break
 
-    # ------------------------------------------------------------------
-    def _finish(self, reply: str, calls: list[dict], results: list[dict]) -> Turn:
+        # An empty string passes every check in the gate -- it states no figure
+        # and no verdict -- so it would be published as a blank answer. That is
+        # the one outcome worse than a withheld one, because it looks like the
+        # system agreed with you.
+        if not reply.strip():
+            return Turn(self.NOTHING_SAID, calls, results,
+                        grounding.check("", results), corrected=True)
+
         g = grounding.check(reply, results)
         if g.ok:
             return Turn(g.rendered, calls, results, g)
@@ -282,22 +328,16 @@ class Agent:
         # this turn", on a question the engine can answer completely.
         self.messages.append({"role": "user", "content": g.corrective_prompt()})
         for remaining in range(self.max_rounds - 1, -1, -1):
-            msg = self._complete("auto" if remaining else "none")
+            msg = yield ("auto" if remaining else "none")
             self.messages.append(msg)
             if not msg.get("tool_calls"):
                 break
-            for tc in msg["tool_calls"]:
-                name, args = _call_of(tc)
-                result = dispatch(self.tools, name, args)
-                calls.append({"name": name, "arguments": args})
-                results.append(result)
-                renumber(results)
-                self.messages.append(
-                    {"role": "tool", "tool_call_id": tc.get("id"),
-                     "content": json.dumps(result, default=str, ensure_ascii=False)}
-                )
+            run_tools(msg)
 
-        g2 = grounding.check(msg.get("content") or "", results)
+        second = msg.get("content") or ""
+        if not second.strip():
+            return Turn(self.NOTHING_SAID, calls, results, g, corrected=True)
+        g2 = grounding.check(second, results)
         if g2.ok:
             return Turn(g2.rendered, calls, results, g2, corrected=True)
         if not g2.blocking:
@@ -314,3 +354,9 @@ class Agent:
             g2,
             corrected=True,
         )
+
+    # ------------------------------------------------------------------
+    NOTHING_SAID = (
+        "The model returned nothing for that turn. The workspace shows what "
+        "the engine computed; ask again, or switch provider in settings."
+    )

@@ -17,8 +17,13 @@ Two things differ at the edge, and both are named rather than papered over:
 
 import json
 
-from js import Response
+from js import Object, Response
+from js import fetch as js_fetch
 from pyodide.ffi import to_js
+
+
+def _to_js(obj):
+    return to_js(obj, dict_converter=Object.fromEntries)
 
 import dataset_bundle
 from aircrew import data as _data
@@ -31,14 +36,47 @@ from aircrew.tools import SCHEMAS, Tools, dispatch  # noqa: E402  (after BUNDLED
 _tools = Tools()
 
 
+async def _complete(base, key, model, messages, tool_choice):
+    """One completion, over the platform's fetch.
+
+    This is the only thing the Worker does differently from the local server:
+    `Agent.drive` is the same generator in both, so the tool rounds, the claim
+    substitution and the gate cannot drift between the two deployments.
+    """
+    from aircrew.tools import OPENAI_TOOLS
+
+    body = json.dumps({
+        "model": model, "messages": messages,
+        "tools": OPENAI_TOOLS, "tool_choice": tool_choice,
+    })
+    response = await js_fetch(
+        f"{base}/chat/completions",
+        _to_js({
+            "method": "POST",
+            "headers": {"content-type": "application/json",
+                        "authorization": f"Bearer {key}"},
+            "body": body,
+        }),
+    )
+    text = await response.text()
+    if response.status >= 400:
+        raise RuntimeError(f"HTTP {response.status} from the model endpoint: "
+                           f"{text[:300]}")
+    data = json.loads(text)
+    choices = data.get("choices")
+    if not choices:
+        raise RuntimeError(f"no choices in the model response: {text[:200]}")
+    msg = {k: v for k, v in (choices[0].get("message") or {}).items()
+           if v is not None}
+    msg.setdefault("content", "")
+    return msg
+
+
 def _json(obj, status=200):
     return Response.new(
         json.dumps(obj, default=str),
-        to_js(
-            {"status": status,
-             "headers": {"content-type": "application/json; charset=utf-8"}},
-            dict_converter=__import__("js").Object.fromEntries,
-        ),
+        _to_js({"status": status,
+                "headers": {"content-type": "application/json; charset=utf-8"}}),
     )
 
 
@@ -108,22 +146,59 @@ async def on_fetch(request, env):
         return _json({"ok": True})
 
     if path == "/api/chat":
-        # Not "not configured yet" -- not possible here, and worth saying so
-        # rather than shipping a button that fails on the first click.
-        #
-        # `Agent.ask` is synchronous: it calls `_post`, which blocks on
-        # urllib. A Worker has no sockets and no way to block on a promise, so
-        # the loop cannot run at the edge until `ask` and `_post` are async all
-        # the way down. That refactor is worth doing; it is not worth doing
-        # untested the night before a demo. See worker/README.md.
+        provider = payload.get("provider") or {}
+        base = (provider.get("base_url") or "").strip().rstrip("/")
+        key = (provider.get("api_key") or "").strip()
+        model = (provider.get("model") or "").strip()
+        if not (base and key and model):
+            return _json({
+                "error": "no model configured",
+                "detail": "This deployment holds no API key of its own.",
+                "hint": "Open settings and add a provider -- Sarvam, Gemini, "
+                        "Cloudflare Workers AI or any OpenAI-compatible "
+                        "endpoint. The key stays in this browser and is sent "
+                        "with each question; it is never stored at the edge. "
+                        "The workspace is computed by the engine and works "
+                        "without a model at all.",
+            }, 503)
+
+        message = (payload.get("message") or "").strip()
+        if not message:
+            return _json({"error": "message required"}, 400)
+
+        from aircrew.agent import Agent
+
+        agent = Agent(model=model, base_url=base, api_key=key, tools=_tools)
+        # A Worker isolate does not outlive the request, so the browser is the
+        # only thing that remembers the conversation. It sends it back, and
+        # this replays it: the same history the local server keeps in memory.
+        for past in payload.get("history") or []:
+            if past.get("role") in ("user", "assistant") and past.get("content"):
+                agent.messages.append({"role": past["role"],
+                                       "content": past["content"]})
+
+        loop = agent.drive(message)
+        try:
+            choice = loop.send(None)
+            while True:
+                try:
+                    msg = await _complete(base, key, model, agent.messages, choice)
+                except Exception as exc:
+                    loop.close()
+                    return _json({"error": "model call failed",
+                                  "detail": str(exc)[:300]}, 502)
+                choice = loop.send(msg)
+        except StopIteration as done:
+            turn = done.value
+
         return _json({
-            "error": "the chat is not available on this deployment",
-            "detail": "The agent loop is synchronous and a Worker cannot block "
-                      "on an outbound request; the loop has to be made async "
-                      "before it can run here.",
-            "hint": "Every panel in the workspace is computed by the engine "
-                    "over /api/tool and works without a model. For the chat, "
-                    "run the local server: python -m aircrew.server",
-        }, 503)
+            "reply": turn.reply,
+            "tool_calls": turn.tool_calls,
+            "tool_results": turn.tool_results,
+            "corrected": turn.corrected,
+            "grounded": turn.grounding.ok if turn.grounding else None,
+            "ungrounded_numbers":
+                turn.grounding.ungrounded_numbers if turn.grounding else [],
+        })
 
     return _json({"error": "not found"}, 404)

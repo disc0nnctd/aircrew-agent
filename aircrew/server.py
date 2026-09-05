@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import urllib.error
+import urllib.request
 import os
 import sys
 import threading
@@ -58,13 +60,102 @@ def desk_of(handler) -> str:
     return (said or "default")[:64]
 
 
+# Providers this has actually been run against, with what was observed. The
+# UI offers these as starting points; any OpenAI-compatible endpoint works,
+# because the loop only ever asks for one completion with tools.
+PROVIDERS = {
+    "sarvam": {
+        "label": "Sarvam AI",
+        "base_url": "https://api.sarvam.ai/v1",
+        "models": ["sarvam-105b", "sarvam-105b-conversations"],
+        "note": "Free tier. Tool calling works; answers in about 6 seconds.",
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "models": ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.8-flash",
+                   "gemini-2.5-flash"],
+        "note": "Free tier. 3.7-flash is the fastest tested; 3.8-flash hits the "
+                "free request quota quickly.",
+    },
+    "cloudflare": {
+        "label": "Cloudflare Workers AI",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/"
+                    "ACCOUNT_ID/ai/v1",
+        "models": ["@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+                   "@cf/mistralai/mistral-small-3.1-24b-instruct",
+                   "@cf/qwen/qwen3-30b-a3b-fp8"],
+        "note": "Put your account id in the URL. Avoid @cf/openai/gpt-oss-*: "
+                "they answer into a reasoning field and return no content.",
+    },
+    "nvidia": {
+        "label": "NVIDIA NIM",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "models": ["meta/llama-3.3-70b-instruct", "qwen/qwen3-next-80b-a3b-instruct"],
+        "note": "Free developer tier. Untested here -- bring a key and try it.",
+    },
+    "openai": {
+        "label": "OpenAI-compatible (other)",
+        "base_url": "https://api.openai.com/v1",
+        "models": [],
+        "note": "Any endpoint that serves /chat/completions with tool calling.",
+    },
+}
+
+# What each desk chose in the settings panel. Keys live here and in nothing
+# else: never written to disk, never logged, never returned by the API.
+_desk_config: dict[str, dict] = {}
+
+
+def configure_desk(desk: str, base_url: str, model: str, api_key: str | None):
+    """Point one desk at a different provider, keeping its conversation.
+
+    The history is what makes a follow-up work, and switching model is not a
+    reason to lose it -- the messages are provider-agnostic.
+    """
+    from .agent import Agent
+
+    with _desks_lock:
+        previous = _desks.get(desk)
+        keep = list(previous.messages) if previous is not None else None
+        old = _desk_config.get(desk) or {}
+        key = api_key or old.get("api_key")
+        agent = Agent(model=model, base_url=base_url, api_key=key, tools=_tools)
+        if keep:
+            agent.messages = keep
+        _desk_config[desk] = {"base_url": base_url, "model": model, "api_key": key}
+        _desks[desk] = agent
+        _desk_locks.setdefault(desk, threading.Lock())
+    return agent
+
+
+def desk_view(desk: str) -> dict:
+    """What the settings panel is allowed to see. Never the key itself."""
+    cfg = _desk_config.get(desk)
+    if cfg:
+        return {"base_url": cfg["base_url"], "model": cfg["model"],
+                "key_set": bool(cfg["api_key"]), "source": "settings"}
+    base = get_agent()
+    return {
+        "base_url": getattr(base, "_base_url", None),
+        "model": getattr(base, "model", None),
+        "key_set": base is not None,
+        "source": "environment" if base is not None else "none",
+    }
+
+
 def desk_agent(desk: str):
     """The agent for one desk, built from the same configuration as the rest.
 
     A shallow copy shares the tools, the model and the transport; only the
     message history is per desk, and that is the only mutable state a
-    conversation has.
+    conversation has. A desk that has chosen its own provider gets its own
+    agent instead.
     """
+    with _desks_lock:
+        agent = _desks.get(desk)
+        if agent is not None:
+            return agent
     base = get_agent()
     if base is None:
         return None
@@ -155,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
             from .tools import SCHEMAS
 
             return self._json(SCHEMAS)
+
+        if path == "/api/provider":
+            return self._json({
+                "current": desk_view(desk_of(self)),
+                "providers": PROVIDERS,
+            })
         if path == "/api/prompt":
             from .agent import DEFAULT_MODEL, SYSTEM_PROMPT
 
@@ -190,6 +287,50 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 traceback.print_exc()
                 return self._json({"error": "tool raised"}, 500)
+
+        if self.path == "/api/provider":
+            base_url = (payload.get("base_url") or "").strip().rstrip("/")
+            model = (payload.get("model") or "").strip()
+            api_key = (payload.get("api_key") or "").strip() or None
+            if not base_url or not model:
+                return self._json({"error": "base_url and model are required"}, 400)
+            desk = desk_of(self)
+            try:
+                configure_desk(desk, base_url, model, api_key)
+            except Exception as exc:
+                return self._json({"error": "could not configure",
+                                   "detail": str(exc)}, 400)
+            return self._json({"ok": True, "current": desk_view(desk)})
+
+        if self.path == "/api/models":
+            # The provider's own list, fetched with the key the controller
+            # just typed. Proxied rather than fetched from the browser so the
+            # key never has to survive a redirect or a CORS preflight.
+            base_url = (payload.get("base_url") or "").strip().rstrip("/")
+            api_key = (payload.get("api_key") or "").strip()
+            if not base_url:
+                return self._json({"error": "base_url required"}, 400)
+            if not api_key:
+                cfg = _desk_config.get(desk_of(self)) or {}
+                api_key = cfg.get("api_key") or ""
+            req = urllib.request.Request(
+                f"{base_url}/models",
+                headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                return self._json({"error": f"HTTP {exc.code} from the provider"}, 200)
+            except Exception as exc:
+                return self._json({"error": str(exc)[:200]}, 200)
+            listed = body.get("data") if isinstance(body, dict) else None
+            names = sorted(
+                (m.get("id") or "").split("/")[-1] if str(m.get("id", "")).startswith("models/")
+                else m.get("id") or ""
+                for m in (listed or []) if isinstance(m, dict)
+            )
+            return self._json({"models": [n for n in names if n]})
 
         if self.path == "/api/reset":
             # The browser's Clear reloads the page, which empties the log the
