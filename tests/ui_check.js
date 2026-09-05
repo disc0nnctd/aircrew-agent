@@ -63,6 +63,28 @@ setTimeout(async () => {
   const panelsAfter1 = w.document.querySelector('#panels').textContent;
   check('workspace drew the ranked cover', panelsAfter1.includes('Ranked cover'), panelsAfter1.slice(0, 120));
 
+  // The ranked table has to fit the pane. Left to size itself, the action text
+  // ("...deadhead from DEL (first departure delayed ~3.0h)") pushed Base, Delay
+  // and the inspect link behind a horizontal scrollbar -- the three columns a
+  // controller compares between rows.
+  const ranked = w.document.querySelector('table.ranked');
+  check('ranked table is fixed-layout', !!ranked);
+  check('its columns are declared', !!ranked && ranked.querySelectorAll('colgroup col').length === 7,
+        ranked && ranked.querySelector('colgroup') && ranked.querySelector('colgroup').outerHTML);
+  check('the action column can wrap', !!ranked && !!ranked.querySelector('td.action'));
+  const conditional = [...(ranked ? ranked.querySelectorAll('tbody tr') : [])]
+    .find(r => r.textContent.includes('C-2210'));
+  check('a positioned option is amber, not green',
+        !!conditional && !!conditional.querySelector('.tag.warn'),
+        conditional && conditional.textContent.trim().slice(0, 90));
+  check('and says what the condition is',
+        !!conditional && /positioning/i.test((conditional.querySelector('.tag') || {}).title || ''),
+        conditional && (conditional.querySelector('.tag') || {}).title);
+  check('every row offers an inspect',
+        !!ranked && [...ranked.querySelectorAll('tbody tr')]
+          .filter(r => /C-\d{4}/.test(r.textContent))
+          .every(r => (r.querySelector('.rowbtn') || {}).textContent === 'inspect'));
+
   // a second turn takes the canvas
   const m2 = w.say('Advisor', w.renderAnswer('second answer, no panels'));
   w.markShown(m2);

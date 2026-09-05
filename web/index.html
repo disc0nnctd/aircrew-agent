@@ -315,6 +315,21 @@ td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-num
    its end cut off. Only this column wraps: the rest are ids and figures, which
    are worse broken over two lines than scrolled to. */
 td.wrap{white-space:normal;min-width:26ch}
+
+/* The ranked table has to fit the pane: the columns a controller compares --
+   cost, status, base, delay -- are fixed and narrow, and the prose column
+   absorbs whatever is left. */
+table.ranked{table-layout:fixed}
+table.ranked .c-rank{width:34px}
+table.ranked .c-cost{width:104px}
+table.ranked .c-status{width:118px}
+table.ranked .c-base{width:52px}
+table.ranked .c-delay{width:56px}
+table.ranked .c-act{width:64px}
+table.ranked td.action{white-space:normal;line-height:1.35}
+table.ranked td:nth-child(3){white-space:normal}
+table.ranked th,table.ranked td{padding-left:8px;padding-right:8px}
+table.ranked .tag{white-space:normal;text-align:center}
 /* Rows the answer named. The reply says "DX401, DX402, DX588, DX589" and the
    controller should not have to hunt for them in 147 rows. */
 tbody tr.named td:first-child{box-shadow:inset 3px 0 0 var(--blue)}
@@ -1313,8 +1328,18 @@ function pResolve(env){
       'Nobody holds the rating, base and legality for this pairing. Widen the base filter to allow positioning, or check the on-call windows for the report time.'));
   } else {
     // Deciding field first: what it costs and whether it is legal, then who.
+    // Fixed layout, and the one column that can be any length is the one that
+    // wraps. Left to size itself, "Assign Captain C-2210 (reserve callout +
+    // deadhead from DEL (first departure delayed ~3.0h))" pushed Base, Delay
+    // and the inspect link off the right-hand edge behind a scrollbar -- so the
+    // three things a controller compares between rows were the three things
+    // they could not see.
     const tw = el('div','tw'), t = el('table');
-    t.innerHTML = '<thead><tr><th>#</th><th>Cost</th><th>Status</th><th>Action</th>' +
+    t.className = 'ranked';
+    t.innerHTML = '<colgroup><col class="c-rank"><col class="c-cost">' +
+                  '<col class="c-status"><col><col class="c-base">' +
+                  '<col class="c-delay"><col class="c-act"></colgroup>' +
+                  '<thead><tr><th>#</th><th>Cost</th><th>Status</th><th>Action</th>' +
                   '<th>Base</th><th>Delay</th><th></th></tr></thead>';
     const tb = el('tbody');
     d.options.forEach(o => {
@@ -1348,7 +1373,7 @@ function pResolve(env){
           + ' Without it, RULE-BASE-07 stops the assignment.';
       }
       tg.appendChild(tag); tr.appendChild(tg);
-      tr.appendChild(el('td', null, o.action));
+      tr.appendChild(el('td','action', o.action));
       tr.appendChild(el('td', null, o.base || '—'));
       tr.appendChild(el('td','num', o.delay_hours ? o.delay_hours + 'h' : '—'));
       const act = el('td');
