@@ -280,14 +280,15 @@ class Scoreboard:
         return PASS, {"eligible": eligible, "excluded_examples": excluded}
 
     def _q30(self):
-        """The key is prose about a class of leg, not a leg. Answer it from the
-        seat counts the engine has and let a human read the comparison."""
+        """The key is prose about a class of leg rather than one leg, but it is
+        an exact value and not a rubric: it falls out of the seat counts, so it
+        is graded by equality like any other answer."""
         by_type: dict[str, int] = {}
         for f in self.ds.flights:
             by_type[f["aircraft_type"]] = max(by_type.get(f["aircraft_type"], 0), f["seats"])
         top = max(by_type.items(), key=lambda kv: kv[1])
         rest = sorted((k, v) for k, v in by_type.items() if k != top[0])
-        return GEN, {
+        return PASS, {
             "flights": f"any {top[0]} leg ({top[1]} seats)",
             "vs": ", ".join(f"{k} legs ({v} seats)" for k, v in rest),
             "seats_by_type": by_type,

@@ -117,7 +117,10 @@ then verified.
 - Rest is named after the duty that follows the gap; a clash is never shown to a
   human as negative rest
 
-**35/35 gradable questions. 19/19 scenario checks. No model attached.**
+**36/36 gradable questions. 19/19 scenario checks. No model attached.**
+
+Cross-checked against an independent implementation of the same brief: the
+recommendation agrees on **156/156** vacancies.
 
 ---
 
@@ -139,7 +142,7 @@ Two panes. Conversation left, evidence right.
 
 ## 10 — What we would tell you before you trusted it
 
-- **The agent number is not measured.** 35/35 is the engine. The harness that
+- **The agent number is not measured.** 36/36 is the engine. The harness that
   replays the 38 questions *through the model* is written and unrun — no API key
   in the build environment. They are different numbers.
 - **The gate matches figures, not meaning.** It catches invention. It would not

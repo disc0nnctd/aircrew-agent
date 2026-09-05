@@ -443,13 +443,15 @@ class Engine:
             role = self.ds.role_on_pairing(pairing_id, vacated_by)
         if role is None:
             return {"error": "Need a role, or the crew member who dropped out"}
-        if vacated_by is None:
-            # The person being replaced is whoever holds that role on the
-            # pairing. Deriving it means a controller can say "the VT-DXA
-            # captain is sick" without also looking up who that is.
-            vacated_by = next(
-                (m["crew_id"] for m in p["crew"] if m["role"] == role), None
-            )
+        incumbents = [m["crew_id"] for m in p["crew"] if m["role"] == role]
+        if vacated_by is None and len(incumbents) == 1:
+            # "The VT-DXA captain is sick" names a person without naming them,
+            # so derive it -- otherwise the one crew member who certainly
+            # cannot cover the vacancy is offered as its cheapest solution.
+            # Only when the role has exactly one holder: with three Cabin Crew
+            # on a pairing, guessing which of them dropped out would silently
+            # drop a legal candidate from the ranking.
+            vacated_by = incumbents[0]
 
         start = parse_date(from_date) if from_date else None
         template = self.cover_duties(pairing_id, "", start)
@@ -587,6 +589,8 @@ class Engine:
             "pairing_id": pairing_id,
             "role": role,
             "vacated_by": vacated_by,
+            "vacancy_ambiguous": vacated_by is None and len(incumbents) > 1,
+            "role_incumbents": incumbents,
             "from_date": from_date,
             "aircraft": p["aircraft"],
             "dep_station": dep,

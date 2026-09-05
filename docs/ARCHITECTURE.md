@@ -52,7 +52,7 @@ enforced by a mechanism rather than by a sentence in a prompt.
 │   query.py    the typed lookups                                         │
 │   data.py     loaders, indices, Duty                                    │
 │                                                                         │
-│   Proven by:  scoreboard.py — 35/35 gradable questions, 19/19           │
+│   Proven by:  scoreboard.py — 36/36 gradable questions, 19/19           │
 │               scenario checks, with no model attached                   │
 └─────────────────────────────────────────────────────────────────────────┘
          │

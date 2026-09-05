@@ -135,7 +135,7 @@ counting why candidates were excluded:
 | RULE-QUAL-05 aircraft rating | 1879 | 66% |
 | RULE-REST-04 rest / double-booking | 664 | 23% |
 | RULE-BASE-07 base or on-call window | 256 | 9% |
-| RULE-CERT-06 certification | 17 | 0.6% |
+| RULE-CERT-06 certification | 18 | 0.6% |
 | RULE-DUTY-02 60h in 7 days | 13 | 0.5% |
 | **RULE-FDP-01 duty period** | **0** | never |
 | **RULE-FLT-03 100h in 28 days** | **0** | never |
@@ -154,8 +154,8 @@ are load-bearing only in the delay path.
 The pool numbers, same 156 vacancies:
 
 ```
-candidate pool     min 24   max 63   mean 34.5
-legal survivors    min  5   max 45   mean 16.4
+candidate pool     min 24   max 64   mean 34.7
+legal survivors    min  5   max 46   mean 16.5
 vacancies with no legal cover at all: 0
 ```
 
@@ -298,7 +298,104 @@ attached to the thing that would otherwise be over-read.
 
 ---
 
-## 8. If there were another day
+## 8. Compared with `main`
+
+`main` is a complete prior implementation of the same brief. The two branches
+have **no common ancestor** — `TASK.md` on this branch is `docs/REBUILD_PROMPT.md`
+on `main`, so this is a second independent pass at the same spec by the same
+author. That makes it a genuine cross-check rather than a diff.
+
+### Shape
+
+| | `main` | `rebuild` (this branch) |
+| --- | ---: | ---: |
+| Code lines (py/js/css/html) | 10,738 | 5,221 |
+| Tools | 23 | 9 |
+| Tests | 267 passing, 20 skipped | 10 passing |
+| Doc lines | 2,635 | 1,386 |
+| Questions | **36/36**, 2 GEN | **36/36**, 2 GEN |
+| Scenario checks | not separately scored | 19/19 |
+
+### They agree on every recommendation
+
+Running all 156 (pairing, role) vacancies through both engines:
+
+- **The rank-1 recommendation is identical in 156/156.** Two independent
+  implementations, built from the same keys but not from each other, never
+  disagree about what to actually do.
+- The cost profile of the top-N agrees in 155/156.
+- The ranked list itself is identical in **105/156**.
+
+That is the strongest evidence available here that the recovered rules — the
+additive accrual, the deadhead formula, the `(cost, crew_id)` ordering, the
+check order — are right rather than merely self-consistent.
+
+### The 51 that differ have one cause
+
+Every remaining difference is the same thing: when `resolve_cover` is called
+with a role but no named person, `main` offers **the sole incumbent of that role
+as a candidate to cover their own vacancy**.
+
+```
+P-2204, First Officer   (C-2791 is the only FO rostered on it)
+  ours:  C-3312 · C-1510 · C-1895 · C-2295 · C-2888
+  main:  C-3312 · C-1510 · C-1895 · C-2295 · C-2791   ← the person who is out
+```
+
+51/51 of the differences are that, and it never shows in grading because every
+graded call names the unavailable crew member. It is an untested path.
+
+We hit the mirror image of this bug while doing the comparison, and fixing it
+was the one code change this exercise produced. Deriving the incumbent from the
+roster is right when the role has **one** holder — "the VT-DXA captain is sick"
+names a person without naming them — but P-2202 has three Cabin Crew, and
+guessing that the first-listed one dropped out silently removed a legal
+candidate from the ranking. `resolve_cover` now derives the incumbent only when
+the role has exactly one holder, and reports `vacancy_ambiguous` otherwise. That
+change alone moved the agreement from 100/156 to 105/156 and reduced the
+remaining differences to a single category.
+
+Both defects are the same species as the S5 problem in §4: the graded path is
+correct and the ungraded neighbouring path is not, because nothing was
+exercising it.
+
+### Where the designs actually differ
+
+**`main` has no gate on invented figures.** "Grounded" there means tool results
+are kept in the transcript so a claim *can* be traced — a convention, not an
+enforcement. Its only agent-side mechanism is the deferral push-back that
+detects the model announcing a tool instead of calling it, which its own rebuild
+prompt records as having "ran 137 lines and fired zero times on a frontier
+model". The claim envelope and the substitution gate on this branch are the
+substantive addition, and they are what the amended brief asked for: the agent
+may propose, but only a validated deterministic result may be stated.
+
+**23 tools, not the seventeen its own prompt specifies.** The drift includes the
+two the prompt explicitly warns against:
+
+- `check_rules_only` — a second tool for the second verdict. Here that is two
+  sections of one `check_assignment` result, which is what the prompt
+  recommends and what the keys need (Q24 and S2 key on different halves for the
+  same person).
+- `list_exclusions` — whose own description says it exists because "the
+  workspace collapses them under the ranked plan, so this is how you bring them
+  forward". That is a tool built to fight a layout decision. Here exclusions are
+  rendered inline, expanded and grouped by rule, so there is nothing to fight.
+
+**`main` keeps `dedupe_overlap_day`** (defaulting to `False`) as a switch for
+"the airline-correct value". This branch removed it: adding the two sources
+reproduces the published field for 150/150 crew and de-duplicating reproduces it
+for none, so the flag has no defensible second setting.
+
+**`main` is far better tested.** 267 tests across 19 files, including a
+dedicated file per rule, against 10 here. The scoreboard plus the scenario
+checks cover the engine's behaviour end to end, but there is nothing on this
+branch equivalent to `test_rule_rest.py` exercising a rule in isolation. That is
+the clearest thing this branch is missing.
+
+---
+
+## 9. If there were another day
 
 In the order I would actually do them:
 

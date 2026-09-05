@@ -14,7 +14,7 @@ is enforced by a gate, not by a line in a prompt. See
 
 | Measurement | Result |
 | --- | --- |
-| The 38 questions, through the engine | **35 / 35 gradable pass** (3 are rubrics, not values, and are never counted as passes) |
+| The 38 questions, through the engine | **36 / 36 gradable pass** (2 are rubrics, not values, and are never counted as passes) |
 | The 6 worked scenarios | **19 / 19 checks pass**, including S2's 19 exclusions byte for byte |
 | Agent loop and claim gate | **10 / 10 tests pass** |
 | The 38 questions, *through the agent* | **not measured** — needs an API key. See [Honest trade-offs](#honest-trade-offs). |
@@ -30,7 +30,7 @@ Python 3.10+. No dependencies for the engine, the CLI or the workspace.
 
 ```bash
 git clone <this repo> && cd aircrew-agent
-python -m aircrew.scoreboard          # should print 35/35 and 19/19
+python -m aircrew.scoreboard          # should print 36/36 and 19/19
 python -m aircrew.server              # http://127.0.0.1:8765
 ```
 
@@ -156,6 +156,13 @@ working the pairing — is documented with analysis in
 places where the reference contradicts itself, and everything that was tried and
 thrown away, are in [docs/NOTES.md](docs/NOTES.md).
 
+**Cross-checked against `main`,** a complete independent implementation of the
+same brief with no common ancestor. Across all 156 (pairing, role) vacancies the
+**rank-1 recommendation is identical in 156/156** and the full ranked list in
+105/156; every remaining difference is `main` offering the sole incumbent of a
+vacant role as a candidate to cover their own vacancy. Detail in
+[docs/NOTES.md §8](docs/NOTES.md#8-compared-with-main).
+
 **Two of the seven rules never eliminate anybody.** Across all 156 (pairing,
 role) vacancies in the roster, RULE-FDP-01 and RULE-FLT-03 produce zero
 exclusions — the maximum 28-day block in the whole dataset is 79.28h against a
@@ -163,9 +170,9 @@ exclusions — the maximum 28-day block in the whole dataset is 79.28h against a
 it, but "we checked seven rules" would overstate what happened. Measurements in
 [docs/NOTES.md §3](docs/NOTES.md#3-the-surprise-which-rules-actually-bind).
 
-**Three questions have rubrics for answer keys** (Q30, Q36, Q38). They are
-marked `GEN` and never counted as passes; grading a rubric against itself is a
-fake pass. The honest denominator is 35, not 38.
+**Two questions have rubrics for answer keys** (Q36, Q38). They are marked
+`GEN` and never counted as passes; grading a rubric against itself is a fake
+pass. The honest denominator is 36, not 38.
 
 **The half-open closure interval is an assumption.** No flight in this dataset
 sits on a closure boundary, so inclusive and half-open bounds give identical
