@@ -16,8 +16,14 @@ is enforced by a gate, not by a line in a prompt. See
 | --- | --- |
 | The 38 questions, through the engine | **36 / 36 gradable pass** (2 are rubrics, not values, and are never counted as passes) |
 | The 6 worked scenarios | **19 / 19 checks pass**, including S2's 19 exclusions byte for byte |
-| Agent loop and claim gate | **13 / 13 tests pass** |
-| The 38 questions, *through the agent* (gpt-5.6-luna) | **35 / 36** gradable on the last run, re-scored; one genuine failure (Q27). Three fixes since are unverified — see [docs/ISSUES.md](docs/ISSUES.md). |
+| Agent loop and claim gate | **28 / 28 tests pass** |
+| The workspace, in a headless browser | **119 / 119 DOM checks pass** |
+| Two outside reviews, their own regressions | **9 / 13 pass**; the other 4 are [findings we rejected](docs/REVIEW_DISPOSITION.md) because they contradict the published answer keys |
+| The 38 questions, *through the agent* (gpt-5.6-luna) | Last full browser sweep: **38 / 38 answered**, no console errors. That sweep predates the current claim gate, which is stricter — see [docs/ISSUES.md](docs/ISSUES.md). |
+
+One caveat worth stating plainly: the engine score checks whether each expected
+value appears in the tool results, which is retrieval and routing coverage. It
+is not a judgement that the sentence the controller reads is the right one.
 
 ```bash
 python -m aircrew.scoreboard          # the engine number, no model required
@@ -57,6 +63,20 @@ python -m aircrew.cli delay    --aircraft VT-DXA --date 2026-09-16 --hours 1.5 -
 python -m aircrew.cli closure  --station BLR --date 2026-09-17 --start 08:00 --end 14:00
 python -m aircrew.cli timeline --crew C-3310 --pairing P-2291
 ```
+
+## Deploying
+
+The workspace deploys to Cloudflare Workers — the same engine, the same tools,
+the same page, running with no filesystem and no model.
+
+```bash
+python worker/build.py
+cd worker && npx wrangler deploy
+```
+
+The chat does not deploy. `Agent.ask` is synchronous and a Worker cannot block
+on an outbound request, so `/api/chat` says so there rather than failing on the
+first click. [worker/README.md](worker/README.md) has the detail.
 
 ## Layout
 
