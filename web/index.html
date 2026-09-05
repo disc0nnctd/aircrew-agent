@@ -342,6 +342,7 @@ tr.checks .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;
 .tag.illegal{color:var(--red);border-color:#5c2c2c;background:#241212}
 .tag.info{color:var(--blue);border-color:#28455f;background:#111d28}
 .tag.warn{color:var(--accent);border-color:#5c4a17;background:#241d0c}
+.tag[title]{cursor:help}
 
 /* the headline figure: one per panel, never a row of invented stats */
 .headline{display:flex;flex-wrap:wrap;gap:22px;padding:12px}
@@ -382,6 +383,7 @@ details.more ul{margin:0;padding:6px 12px 10px 28px;font-size:12px;color:var(--i
   border-top:1px solid var(--line);font-family:var(--sans);font-size:12.5px}
 .excl-list li:first-child{border-top:none}
 .excl-list li strong{font-family:var(--mono);color:var(--ink);min-width:64px}
+.excl-list li .rowbtn{margin-left:auto;padding-left:10px;white-space:nowrap}
 details.more li{margin:3px 0;font-family:var(--mono);font-size:11.5px}
 details.more li .reason-line{font-family:var(--sans);font-size:12px}
 
@@ -1324,17 +1326,37 @@ function pResolve(env){
       // is none. Badging it "legal" made six rows read as six legal options
       // against a headline that correctly said five.
       const tg = el('td');
+      // Legal on a condition is not the same as legal. C-2210 passes every
+      // rule only because the option flies them in from DEL first, which costs
+      // a deadhead and pushes the first departure back about three hours. Green
+      // beside the four BLR reserves says "equivalent, just dearer", and it is
+      // not: this one has a precondition the controller has to arrange. Amber
+      // is the palette's colour for the thing you are about to act on.
       const tag = !o.crew_id ? el('span','tag warn','fallback')
-                : el('span','tag ' + (o.legal ? 'legal':'illegal'), o.legal ? 'legal':'illegal');
+                : !o.legal ? el('span','tag illegal','illegal')
+                : o.positioned ? el('span','tag warn','legal if positioned')
+                : el('span','tag legal','legal');
+      if(o.positioned && o.legal){
+        const pos = o.positioning || {};
+        tag.title = 'Legal only with positioning: deadhead'
+          + (pos.deadhead_flight_no ? ' on ' + pos.deadhead_flight_no : '')
+          + (pos.from_base ? ' from ' + pos.from_base : '')
+          + (pos.to_station ? ' to ' + pos.to_station : '')
+          + (pos.arrives_utc ? ', arriving ' + pos.arrives_utc.slice(11,16) + 'Z' : '')
+          + (o.delay_hours ? '. First departure moves back about '
+              + o.delay_hours + 'h.' : '.')
+          + ' Without it, RULE-BASE-07 stops the assignment.';
+      }
       tg.appendChild(tag); tr.appendChild(tg);
       tr.appendChild(el('td', null, o.action));
       tr.appendChild(el('td', null, o.base || '—'));
       tr.appendChild(el('td','num', o.delay_hours ? o.delay_hours + 'h' : '—'));
       const act = el('td');
       if(o.crew_id){
-        const b = el('button','rowbtn','why');   // drill-down: calls the tool itself
+        const b = el('button','rowbtn','inspect');  // drill-down: calls the tool itself
         b.type = 'button';
-        b.addEventListener('click', () => drill(o.crew_id, d.pairing_id, d.from_date));
+        b.addEventListener('click', () =>
+          drill(o.crew_id, d.pairing_id, d.from_date, o.positioned));
         act.appendChild(b);
       }
       tr.appendChild(act); tb.appendChild(tr);
@@ -1390,6 +1412,13 @@ function pResolve(env){
         if(!/RULE-[A-Z]+-\d+|DOUBLE-BOOKED/.test(x.reason || ''))
           li.appendChild(el('span', 'tag info', 'not callable'));
         reasonWithRules(li, x.reason, 'bad');
+        // v1 put an Inspect on every ruled-out candidate, and it belongs here:
+        // "9 rest" is a summary, and the controller who wants to argue with it
+        // wants the week that produced it, not the sentence about the week.
+        const insp = el('button','rowbtn','inspect');
+        insp.type = 'button';
+        insp.addEventListener('click', () => drill(x.crew_id, d.pairing_id, d.from_date));
+        li.appendChild(insp);
         ul.appendChild(li);
       }));
       return ul;
@@ -1927,14 +1956,24 @@ function evidenceButton(steps, label, node){
 }
 
 /* --- drill-down: calls the tool endpoint directly, model or no model ----- */
-async function drill(crew_id, pairing_id, from_date){
+/* The scenario has to travel with the drill-down.
+
+   C-2210 is ranked legal because the option positions them from DEL on DX402.
+   Asking check_assignment without `positioned` asks a different question --
+   can they cover it from Delhi, untouched -- and the honest answer to that is
+   RULE-BASE-07. So the table said "legal" and opening it said "not legal",
+   about the same person, on the same screen. Both were right about different
+   scenarios, which is the worst kind of contradiction to show a controller. */
+async function drill(crew_id, pairing_id, from_date, positioned){
+  const label = 'Inspect ' + crew_id + (positioned ? ' (positioned)' : '');
   try{
-    const env = await runTool('check_assignment', {crew_id, pairing_id, from_date});
-    pushPanels(panelsFor('check_assignment', {}, env), 'Why ' + crew_id);
+    const env = await runTool('check_assignment',
+                              {crew_id, pairing_id, from_date, positioned: !!positioned});
+    pushPanels(panelsFor('check_assignment', {}, env), label);
   }catch(e){
     pushPanels([(() => { const p = panel('Could not load');
       p.appendChild(stateBlock('err','The engine did not answer', e.message)); return p; })()],
-      'Why ' + crew_id);
+      label);
   }
 }
 
