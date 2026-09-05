@@ -81,19 +81,27 @@ python -m aircrew.cli closure  --station BLR --date 2026-09-17 --start 08:00 --e
 python -m aircrew.cli timeline --crew C-3310 --pairing P-2291
 ```
 
-## Deploying
+## Live
 
-The workspace deploys to Cloudflare Workers — the same engine, the same tools,
-the same page, running with no filesystem and no model.
+**https://vista-crew.disc0nnctd1.workers.dev**
+
+The same engine, the same tools, the same page — on Cloudflare Workers, with no
+filesystem and no key of its own. Every panel is computed at the edge by the
+Python in `aircrew/`.
+
+The chat runs there too: open **settings** in the header and add a provider
+(Sarvam, Gemini, Cloudflare Workers AI, NVIDIA NIM, or any OpenAI-compatible
+endpoint). The key stays in your browser and rides with each question — a Worker
+isolate does not outlive a request, so nothing is stored at the edge.
+
+To deploy your own:
 
 ```bash
 python worker/build.py
-cd worker && npx wrangler deploy
+cd worker && npx wrangler deploy      # needs Node 22
 ```
 
-The chat does not deploy. `Agent.ask` is synchronous and a Worker cannot block
-on an outbound request, so `/api/chat` says so there rather than failing on the
-first click. [worker/README.md](worker/README.md) has the detail.
+[worker/README.md](worker/README.md) has the detail.
 
 ## Layout
 

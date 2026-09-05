@@ -34,32 +34,34 @@ curl -X POST https://vista-crew.<subdomain>.workers.dev/api/tool \
 Health should report 150 crew, 147 flights, 39 pairings. The tool call should
 recommend C-3310 at INR 18,500, which is the published answer key.
 
-## Why the chat is not here
+## The chat, at the edge
 
-`Agent.ask` is synchronous. It calls `_post`, which blocks on `urllib`. A
-Worker has no sockets and no way to block on a promise, so the loop cannot run
-at the edge until `ask` and `_post` are async the whole way down.
+It runs. The loop is the same generator in both deployments -- `Agent.drive`
+yields which completion to make and receives the message back -- so the local
+server drives it with `urllib` and the Worker drives it with `fetch`. Tool
+dispatch and the claim gate are inside that generator, which means the deployed
+engine and the local one cannot drift.
 
-That refactor is small and worth doing — transport is already isolated in one
-method for exactly this reason — but it changes the component that is hardest
-to test, and it was not worth doing untested before a demo. `/api/chat` returns
-503 with that explanation rather than a button that fails on first click.
+What differs is where the key and the conversation live. A Worker isolate does
+not outlive a request, so both travel with the question: the browser holds the
+provider config in `sessionStorage` (dropped when the tab closes) and posts the
+transcript back each turn. Nothing is stored at the edge, and this deployment
+carries no key of its own -- open **settings** in the header and add one.
 
-There is a second obstacle behind it: the model endpoint this build uses is a
-private Tailscale address, which a Worker cannot reach whatever the code does.
-Enabling the chat at the edge needs a publicly reachable OpenAI-compatible
-endpoint, its URL and key set as Worker secrets:
+Verified against the live Worker:
 
-```bash
-npx wrangler secret put AIRCREW_BASE_URL
-npx wrangler secret put AIRCREW_API_KEY
+```
+POST /api/chat  provider=gemini-3.7-flash
+  -> one resolve_cover call, grounded, corrected=false
+  "Call out Captain C-3310 from the BLR reserve pool to cover pairing P-2291
+   starting 15 Sep. They are legal across all flight, duty, and rest rules and
+   provide the lowest-cost cover at INR 18,500 with no departure delay."
 ```
 
-For the chat today, run the local server, which is unchanged:
-
-```bash
-python -m aircrew.server --port 8768
-```
+Providers behave differently here, so the settings panel says which were tried.
+Gemini `3.7-flash` is the one to demo on. Sarvam answers fine locally but
+returned empty content twice through the Worker, which the loop reports rather
+than printing a blank answer.
 
 ## What was checked
 
