@@ -112,8 +112,21 @@ class Duty:
         )
 
 
+# A deployment target with no filesystem sets this to the parsed tables before
+# anything constructs a Dataset. The edge is the case in mind: Cloudflare's
+# Python runtime has no `problem_statement/data` to read, and the alternative
+# was a second loader that could drift from this one.
+BUNDLED: dict | None = None
+
+
 class Dataset:
-    def __init__(self, data_dir: Path | str = DATA_DIR):
+    def __init__(self, data_dir: Path | str = DATA_DIR, records: dict | None = None):
+        records = records if records is not None else BUNDLED
+        if records is not None:
+            self.dir = None
+            for name in REQUIRED:
+                setattr(self, f"_{name}", records[name])
+            return
         self.dir = Path(data_dir)
         missing = [n for n in REQUIRED if not (self.dir / f"{n}.json").exists()]
         if missing:

@@ -232,6 +232,252 @@ setTimeout(async () => {
   w.document.dispatchEvent(new w.KeyboardEvent('keydown', {key:'Escape'}));
   check('escape closes it', w.document.querySelector('.modal') === null);
 
+  // Everything below is a fix from the two outside reviews of the 38-question
+  // run. Each block names the question the reviewer was looking at, because a
+  // check that outlives the reason for it is a check nobody dares delete.
+  const draw = (name, args, env) => {
+    const host = w.document.createElement('div');
+    w.panelsFor(name, args, env).forEach(n => host.appendChild(n));
+    return host;
+  };
+
+  // 9. Q23: the tool with no panel, and the workspace that called it nothing
+  const restEnv = {
+    summary: 'Released 2026-09-16T15:30:00Z, earliest next report 2026-09-17T03:30:00Z after 12h rest.',
+    claims: [{id: 'c1', text: 'earliest next report is 2026-09-17T03:30:00Z'}], missing: [],
+    data: {released_utc: '2026-09-16T15:30:00Z', min_rest_hours: 12,
+           earliest_report_utc: '2026-09-17T03:30:00Z', rule: 'RULE-REST-04',
+           rule_text: 'Minimum 12 consecutive hours rest between duties.'}};
+  const rest = draw('earliest_next_report', {}, restEnv);
+  check('earliest_next_report draws a panel', rest.querySelectorAll('.panel').length === 1);
+  check('titled Earliest next report', /Earliest next report/i.test(rest.querySelector('h3').textContent),
+        rest.querySelector('h3').textContent);
+  check('with released, rest required and earliest report',
+        rest.querySelectorAll('.headline .fig').length === 3 &&
+        /Released/.test(rest.textContent) && /Rest required/.test(rest.textContent));
+  check('the figure to act on is the amber one',
+        /03:30Z/.test(rest.querySelector('.fig .v.accent').textContent),
+        rest.querySelector('.fig .v.accent').textContent);
+  check('the rest rule travels with its caveat',
+        !!rest.querySelector('.note .rule-tag') && /minimum only/.test(rest.textContent));
+  check('so Q23 now has a drawable step',
+        w.drawableSteps({tool_results: [restEnv],
+                         tool_calls: [{name: 'earliest_next_report', arguments: {}}]}).length === 1);
+
+  // and when a tool did run but nothing could draw it, the workspace says that
+  const drew = w.emptyState({tool_results: [restEnv], tool_calls: [{name: 'x'}]});
+  check('a computed turn that drew nothing says computed, not drawn',
+        /Computed, not drawn/.test(drew[0]) && /figure is in the reply/.test(drew[1]), drew[0]);
+  check('and never claims the conversation answered it',
+        !/from the conversation/.test(drew.join(' ')));
+  const nothing = w.emptyState({});
+  check('a turn where no tool ran keeps the copy that is true of it',
+        /No engine result/.test(nothing[0]) && /from the conversation/.test(nothing[1]));
+  w.clearPanels(...drew);
+  check('the panel title stops saying nothing was computed',
+        /No panel for this result/.test(w.document.querySelector('#panels').textContent) &&
+        !/Nothing computed/.test(w.document.querySelector('#panels').textContent));
+
+  // 10. Q01: the column the question asked for is an object
+  w.setAnswerText('');
+  const reserves = {summary: '2 reserves on call', claims: [], missing: [], data: {count: 2, reserves: [
+    {crew_id: 'C-3310', name: 'D. Reddy', rank: 'Captain', base: 'BLR', ratings: ['A320'],
+     window: {start: '06:00', end: '18:00'}, reachability_minutes: 45},
+    {crew_id: 'C-3312', name: 'P. Sharma', rank: 'First Officer', base: 'BLR', ratings: ['A320'],
+     window: {start: '00:00', end: '12:00'}, reachability_minutes: 60}]}};
+  const res = draw('lookup', {entity: 'reserves'}, reserves);
+  check('an on-call window survives as a column',
+        [...res.querySelectorAll('th')].some(t => /window/i.test(t.textContent)),
+        [...res.querySelectorAll('th')].map(t => t.textContent).join('|'));
+  check('and renders as a window, not [object Object]',
+        /06:00–18:00Z/.test(res.textContent) && !/object Object/.test(res.textContent));
+  check('a start_utc/end_utc window renders the same way',
+        w.windowText({start_utc: '03:00', end_utc: '15:00'}) === '03:00–15:00Z');
+  check('any other nested payload is still dropped from the table',
+        w.windowText({drivers: ['a'], score: 3}) === null);
+
+  // 11. Q21: a red badge on a legal answer
+  const week = {crew_id: 'C-2210', name: 'S. Kapoor', min_rest_hours: 12, legal: false, duties: [
+    {date: '2026-09-15', pairing_id: 'P-2291', aircraft: 'VT-DXC',
+     report_utc: '2026-09-15T06:00:00Z', release_utc: '2026-09-15T15:30:00Z', sectors: 3,
+     flights: ['DX412-2026-09-15', 'DX413-2026-09-15', 'DX588-2026-09-15'],
+     fdp_hours: 9.5, fdp_limit: 12.5, proposed: true,
+     rest_before_hours: null, rest_before_ok: null, overlaps_previous_by_hours: null}],
+    breaches: [{rule: 'RULE-BASE-07', text: 'Reserve callout from own base only.',
+                limit: 'BLR', actual: 'DEL', excess: null,
+                context: {kind: 'base', base: 'DEL', station: 'BLR', needs_positioning: true},
+                message: 'RULE-BASE-07: based DEL, pairing departs BLR'}]};
+  const legalCheck = {summary: 'legal', claims: [], missing: [], data: {
+    crew_id: 'C-2210', pairing_id: 'P-2291', base: 'DEL',
+    rules: {legal: true, issues: [], breaches: [], rules_checked: []},
+    callable: {is_reserve: true, callable: true, reason: null, reachability_minutes: 60},
+    timeline: week}};
+  const legal = draw('check_assignment', {}, legalCheck);
+  check('a legal verdict carries no red rule badge anywhere on it',
+        !legal.querySelector('.tag.illegal'), legal.textContent.slice(0, 90));
+  const costTag = legal.querySelector('.tag.warn');
+  check('the positioning rule is an amber cost note',
+        !!costTag && /^cost: RULE-BASE-07/.test(costTag.textContent), costTag && costTag.textContent);
+  check('and says what the cost actually is',
+        /deadhead positioning from DEL/.test(legal.textContent) &&
+        !/pairing departs BLR/.test(legal.textContent));
+  const stoppedCheck = {summary: 'illegal', claims: [], missing: [], data: {
+    ...legalCheck.data,
+    rules: {legal: false, issues: ['RULE-BASE-07: based DEL, pairing departs BLR'],
+            breaches: [{rule: 'RULE-BASE-07'}], rules_checked: []}}};
+  check('a rule the check did hold against them stays red',
+        !!draw('check_assignment', {}, stoppedCheck).querySelector('.tag.illegal'));
+  check('and a timeline with no check around it is unchanged',
+        !!draw('duty_timeline', {}, {data: week}).querySelector('.tag.illegal'));
+
+  // 12. Q18/Q21/Q28/Q34/Q02: raw flight keys in the timeline row
+  const rail = draw('duty_timeline', {}, {data: week});
+  check('the timeline prints DX412, not DX412-2026-09-15',
+        /DX412, DX413, DX588/.test(rail.textContent) && !/DX412-2026/.test(rail.textContent),
+        rail.querySelector('.day .m').textContent);
+
+  // Q19/Q35: the same key in the station-closure flight column
+  const closure = {summary: '', claims: [], missing: [], data: {
+    station: 'BLR', date: '2026-09-17', window_utc: '08:00–14:00Z', reopen_plus_30: '14:30Z',
+    affected_flight_ids: ['DX412-2026-09-17'], passengers_at_risk: 162,
+    flights_needing_recrew: ['DX412-2026-09-17'],
+    per_flight_assessment: [{min_delay_hours: 2, crew_fdp_after_delay: 13.5, fdp_limit: 12,
+      flight_id: 'DX412-2026-09-17', pairing_id: 'P-2291', action: 'exceeds FDP — re-crew'}]}};
+  const shut = draw('simulate_disruption', {kind: 'closure'}, closure);
+  check('the closure flight column drops the date too',
+        /DX412/.test(shut.textContent) && !/DX412-2026/.test(shut.textContent));
+
+  // 13. Q33: the WHY column was cut mid-sentence
+  const delay = {summary: '', claims: [], missing: [], data: {
+    aircraft: 'VT-DXA', date: '2026-09-16', mode: 'technical', delay_hours: 1.5,
+    fdp_after_delay: 12.75, fdp_before: 11.25, fdp_limit: 12, sectors: 4, breach: true,
+    breach_detail: 'RULE-FDP-01: delayed duty runs 12.75h vs 12.0h limit',
+    options: [{rank: 1, cost_inr: 75000, action: 'Keep them on DX401–DX403',
+               reasoning: 'Delayed 3-leg duty FDP 9.5h vs 12.5h limit — legal. ' +
+                          'Reserve set covers DX404 within its on-call window.'}]}};
+  const why = draw('simulate_disruption', {kind: 'delay'}, delay).querySelector('td.wrap');
+  check('the why column wraps rather than truncating',
+        !!why && /Reserve set covers DX404 within its on-call window/.test(why.textContent));
+
+  // 14. Q12: a 147-row dump where four rows were the answer
+  const flights = {summary: '12 flights matched', claims: [], missing: [], data: {count: 12,
+    flights: Array.from({length: 12}, (_, i) => ({
+      flight_id: 'DX' + (401 + i) + '-2026-09-14', flight_no: 'DX' + (401 + i),
+      date: '2026-09-14', dep_station: 'BLR', arr_station: 'DEL', block_hours: 2.75}))}};
+  w.setAnswerText('The longest block time is 2.75h. The flights are DX411 and DX412.');
+  const named = draw('lookup', {entity: 'flights'}, flights);
+  const namedRows = [...named.querySelector('tbody').children];
+  check('a row the answer names is hoisted to the top', /DX411/.test(namedRows[0].textContent),
+        namedRows[0].textContent);
+  check('both named rows come first',
+        namedRows[0].classList.contains('named') && namedRows[1].classList.contains('named') &&
+        !namedRows[2].classList.contains('named'));
+  check('and they are marked as the ones the answer named',
+        /in the reply/.test(namedRows[0].textContent));
+  check('the panel says why the order changed',
+        /The 2 rows the answer names are shown first/.test(named.textContent),
+        named.querySelector('.note') && named.querySelector('.note').textContent);
+  check('the flight id drops the date it repeats', !/DX411-2026-09-14/.test(named.textContent));
+  check('and the column it duplicates goes with it',
+        [...named.querySelector('table').querySelectorAll('th')]
+          .filter(t => /flight/i.test(t.textContent)).length === 1,
+        [...named.querySelector('table').querySelectorAll('th')].map(t => t.textContent).join('|'));
+  w.setAnswerText('');
+  const unnamed = draw('lookup', {entity: 'flights'}, flights);
+  check('with nothing named the engine order is left alone',
+        /DX401/.test([...unnamed.querySelector('tbody').children][0].textContent) &&
+        !unnamed.querySelector('tr.named'));
+
+  // 15. number grouping, one convention across both panes
+  const money = w.renderAnswer('Cancelling costs INR 1,500,000 against INR 18,500.');
+  check('the chat groups money the way the table does',
+        /INR 15,00,000/.test(money.textContent) && !/1,500,000/.test(money.textContent),
+        money.textContent);
+  check('a small figure is untouched', /INR 18,500/.test(money.textContent));
+  check('a date is not a number to regroup',
+        /on 2026-09-15/.test(w.renderAnswer('on 2026-09-15').textContent));
+  check('nor is a crew id', /C-1042/.test(w.renderAnswer('C-1042 is out').textContent));
+
+  // 16. Q32: two thirteen-row tables below the fold
+  const vac = payload.data;
+  const joint = {summary: '', claims: [], missing: [], data: {
+    vacancies: [{pairing_id: 'P-2205', role: 'Captain'}, {pairing_id: 'P-2212', role: 'Captain'}],
+    plan_count: 157, total_cost_inr: 42500, tie_count: 20,
+    optimal: {assignments: [{cost_inr: 18500, action: 'Assign Captain C-3305 (reserve callout)'},
+                            {cost_inr: 24000, action: 'Assign Captain C-1017 (day-off callout)'}]},
+    per_vacancy: [vac, vac]}};
+  const jointHost = draw('resolve_cover', {}, joint);
+  const folds = [...jointHost.querySelectorAll('details.more.standalone')];
+  check('each vacancy folds under one line', folds.length === 2, folds.length + ' folds');
+  check('and starts shut', folds.every(f => !f.open));
+  const line = folds[0].querySelector('summary').textContent;
+  check('the summary names the vacancy, the count and the pick',
+        /Ranked cover — P-2291 Captain/.test(line) && /options/.test(line) &&
+        /recommended C-3310/.test(line), line);
+  check('the ranked table is inside the fold, not beside it',
+        !!folds[0].querySelector('table') && jointHost.children[0].className === 'panel');
+  check('the joint plan itself is left open',
+        /Joint plan/.test(jointHost.querySelector('.panel h3').textContent));
+
+  // 17. Q38: an uncomputed opinion looks like a computed answer
+  const opinion = w.say('Advisor', w.renderAnswer('Surface three data points per line.'));
+  w.trace(opinion, []);
+  const chip = opinion.querySelector('.trace .uncomputed');
+  check('an answer with no tool behind it is chipped as an opinion',
+        !!chip && /not computed — advisory opinion/.test(chip.textContent), chip && chip.textContent);
+  const computed = w.say('Advisor', w.renderAnswer('Assign C-3310.'));
+  w.trace(computed, [{name: 'resolve_cover'}]);
+  check('and a computed one still names its tools, with no chip',
+        /computed by/.test(computed.querySelector('.trace').textContent) &&
+        !computed.querySelector('.uncomputed'));
+
+  // 18. ported from v1: the seven rule chips under the recommended row
+  const plan = draw('resolve_cover', {}, payload);
+  const checksRows = plan.querySelectorAll('tr.checks');
+  check('the recommended row carries a checks row', checksRows.length === 1,
+        checksRows.length + ' checks rows');
+  check('naming all seven rules', checksRows[0].querySelectorAll('.rule-tag').length === 7);
+  check('each one green, because each one passed',
+        checksRows[0].querySelectorAll('.rule-tag.ok').length === 7);
+  check('every chip still carries its gloss',
+        [...checksRows[0].querySelectorAll('.rule-tag')].every(t => !!t.dataset.tooltip));
+  check('and the chips sit under row 1, not on every row',
+        plan.querySelector('tbody').children[0].classList.contains('pick') &&
+        plan.querySelector('tbody').children[1].classList.contains('checks'));
+
+  // exclusion vocabulary: the fold and the figure above it say the same words
+  const exclSummary = [...plan.querySelectorAll('.panel')]
+    .find(p => /ruled out/i.test(p.querySelector('h3').textContent))
+    .querySelector('details.more summary').textContent;
+  check('the fold summary uses the words the header uses',
+        /aircraft rating/.test(exclSummary) && !/qual/.test(exclSummary), exclSummary);
+  check('and is the engine’s own orientation string, verbatim',
+        exclSummary.includes(payload.data.exclusions_orientation),
+        payload.data.exclusions_orientation);
+
+  // 19. the desk session id, on the two endpoints that carry a conversation
+  const sent = [];
+  const realFetch = w.fetch;
+  w.fetch = async (url, init) => {
+    sent.push({url, init});
+    return {ok: true, json: async () => ({reply: 'ok'})};
+  };
+  await w.api('/api/chat', {message: 'hi'});
+  await w.api('/api/reset', {});
+  await w.api('/api/tool', {name: 'lookup', arguments: {entity: 'crew'}});
+  w.fetch = realFetch;
+  const desk = sent[0].init.headers['X-Desk-Session'];
+  check('the chat call carries a desk session id', !!desk, JSON.stringify(sent[0].init.headers));
+  check('reset carries the same one, so the page is one session',
+        sent[1].init.headers['X-Desk-Session'] === desk);
+  check('the stateless tool endpoint is left exactly as it was',
+        !sent[2].init.headers['X-Desk-Session'] &&
+        sent[2].init.headers['Content-Type'] === 'application/json');
+  check('and nothing else about the chat call changed',
+        sent[0].init.method === 'POST' &&
+        sent[0].init.headers['Content-Type'] === 'application/json' &&
+        JSON.parse(sent[0].init.body).message === 'hi');
+
   console.log(fails ? `\n${fails} FAILURE(S)` : '\nchat pane works');
   process.exit(fails ? 1 : 0);
 }, 400);

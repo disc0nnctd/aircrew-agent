@@ -20,3 +20,10 @@ node_modules/
 
 # duplicate of problem_statement/problem_explanation_k66g3nx88t.pdf
 /problem_explanation_k66g3nx88t.pdf
+
+# Generated deploy bundle: rebuilt by worker/build.py before every deploy.
+worker/dist/
+
+# draw.io editor backups
+.$*
+*.bkp

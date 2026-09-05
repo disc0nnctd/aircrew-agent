@@ -150,6 +150,11 @@ body.dev .devonly{display:inline-block}
   display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .trace span{font-family:var(--mono);font-size:11px;background:var(--panel-2);
   border:1px solid var(--line);padding:1px 6px;border-radius:999px;color:var(--ink-dim)}
+/* An answer with no tool behind it is an opinion, and the only thing marking
+   it as one was the absence of the "computed by" row -- a missing thing, which
+   nobody notices. Grey, because grey is the colour of nothing computed. */
+.trace span.uncomputed{font-family:var(--sans);color:var(--ink-faint);
+  border-style:dashed;background:none}
 
 /* An answer is written prose, so it is rendered as prose. The model emits
    light markdown; pre-wrap printed the asterisks. */
@@ -211,6 +216,21 @@ details.more > summary b{font-weight:650}
 details.more > summary .why{color:var(--ink-dim)}
 details.more > summary:hover{background:#161c25}
 details.more > summary .count{margin-left:auto;color:var(--ink-faint);font-family:var(--mono);font-size:11px}
+/* A fold that stands on its own in the workspace is still a panel, so it wears
+   the panel's chrome. Without it the joint plan's two ranked covers read as two
+   stray lines of text under the plan they belong to. */
+details.more.standalone{background:var(--panel);border:1px solid var(--line);
+  border-radius:5px;margin-bottom:14px;overflow:hidden}
+details.more.standalone > summary{padding:9px 12px;background:var(--panel-2);
+  border-bottom:1px solid transparent}
+details.more.standalone[open] > summary{border-bottom-color:var(--line)}
+details.more.standalone > summary b{font-size:12px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--ink-dim)}
+details.more.standalone .panel{border:none;border-radius:0;margin-bottom:0}
+details.more.standalone .panel + .panel{border-top:1px solid var(--line)}
+/* The summary line already is this panel's title. Printing it again directly
+   under itself is the same words twice, four pixels apart. */
+details.more.standalone .panel:first-child > h3{display:none}
 
 /* A drill-down replaces the workspace, so there has to be a way back. */
 .backbar{display:flex;align-items:center;gap:9px;margin-bottom:10px}
@@ -280,8 +300,28 @@ tbody tr:hover{background:#1a212a}
 tbody tr.pick{background:#1d2430}
 tbody tr.pick td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* A reason is a sentence, and a sentence in a nowrap cell is a sentence with
+   its end cut off. Only this column wraps: the rest are ids and figures, which
+   are worse broken over two lines than scrolled to. */
+td.wrap{white-space:normal;min-width:26ch}
+/* Rows the answer named. The reply says "DX401, DX402, DX588, DX589" and the
+   controller should not have to hunt for them in 147 rows. */
+tbody tr.named td:first-child{box-shadow:inset 3px 0 0 var(--blue)}
+td .named-mark{font:600 10px var(--mono);color:var(--blue);margin-left:6px}
 td.cost{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600}
 tr.dim td{color:var(--ink-dim)}
+/* The seven rules, named, under the row the controller is about to act on.
+   "Legal on all seven rules" is a claim; seven green chips are the evidence,
+   and v1 was right that this is what makes the deterministic engine visible
+   without a click. Row 1 only -- repeated down the table it is wallpaper.
+
+   The amber edge carries down from the row above, because the recommendation
+   and its checks are one block, not a row and a loose strip under it. */
+tbody tr.checks:hover{background:none}
+tr.checks td{padding:0 10px 8px;background:#1d2430;white-space:normal;
+  box-shadow:inset 3px 0 0 var(--accent)}
+tr.checks .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ink-faint);margin-right:7px}
 .rowbtn{background:none;border:none;color:var(--blue);font:inherit;cursor:pointer;padding:0;text-align:left}
 .rowbtn:hover{text-decoration:underline}
 
@@ -419,12 +459,44 @@ const inr = n => 'INR ' + Number(n).toLocaleString('en-IN');
 const hhmm = iso => typeof iso === 'string' && iso.length >= 16 ? iso.slice(11,16)+'Z' : esc(iso);
 const dayOf = iso => typeof iso === 'string' ? iso.slice(0,10) : '';
 
+/* A flight id is DX412-2026-09-15. The date in it is always already on screen
+   -- as the row label, the column beside it, or the panel title -- so what is
+   left to read is DX412. Everywhere ids are shown, they are shown this way. */
+const legNo = id => String(id ?? '').split('-')[0];
+const isFlightId = v => typeof v === 'string' && /^[A-Z]{2}\d+-\d{4}-\d{2}-\d{2}$/.test(v);
+
+/* An on-call window is an object, which is why the table dropped it. It is
+   also the column Q01 asked for. Shaped {start,end} or {start_utc,end_utc}. */
+function windowText(v){
+  if(!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const s = v.start ?? v.start_utc, e = v.end ?? v.end_utc;
+  if(s == null || e == null) return null;
+  return String(s) + '–' + String(e) + 'Z';
+}
+
+/* One grouping, both panes. The table has always used Indian grouping because
+   the currency is INR; the model writes 1,500,000 and side by side that reads
+   as a bug. Only an already-grouped number is touched, so dates, rule ids and
+   crew ids are untouched by construction. */
+const inrGroups = s => String(s ?? '').replace(/\b\d{1,3}(?:,\d{3})+\b/g,
+  m => Number(m.replace(/,/g,'')).toLocaleString('en-IN'));
+
 let modelReady = false;
+
+/* One id per page load, so the desk can key a conversation by it. Generated
+   here and sent as a header; nothing else about the call changes. */
+const DESK_SESSION = (() => {
+  try{ if(crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+  return 'desk-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+})();
 
 /* --- api ---------------------------------------------------------------- */
 async function api(path, body){
-  const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'},
-                              body:JSON.stringify(body)});
+  const headers = {'Content-Type':'application/json'};
+  // The conversation is what is keyed, so the header rides the two endpoints
+  // that carry one. /api/tool is stateless and is left exactly as it was.
+  if(path === '/api/chat' || path === '/api/reset') headers['X-Desk-Session'] = DESK_SESSION;
+  const r = await fetch(path, {method:'POST', headers, body:JSON.stringify(body)});
   const j = await r.json().catch(() => ({error:'bad response'}));
   if(!r.ok) throw Object.assign(new Error(j.error || 'request failed'), {detail:j.detail, hint:j.hint});
   return j;
@@ -455,6 +527,20 @@ const RULE_GLOSS = {
   'DOUBLE-BOOKED':'already flying at that time',
 };
 const gloss = r => RULE_GLOSS[r] || '';
+
+/* The word for a rule when it is being counted rather than quoted: "8 aircraft
+   rating", not "8 qual". These are the engine's own words from its orientation
+   string, kept here so the panel that summarises exclusions and the figure that
+   counts them cannot end up in two vocabularies. */
+const RULE_WORD = {
+  'RULE-FDP-01':  'duty period',
+  'RULE-DUTY-02': 'duty hours',
+  'RULE-FLT-03':  'block hours',
+  'RULE-REST-04': 'rest',
+  'RULE-QUAL-05': 'aircraft rating',
+  'RULE-CERT-06': 'certification',
+  'RULE-BASE-07': 'base / on-call window',
+};
 
 function hideRuleTooltip(){ const t = $('#rule-tooltip'); if(t) t.remove(); }
 
@@ -766,7 +852,7 @@ function showBriefing(){
       [['38 questions through the engine', '36/36 gradable', 'python -m aircrew.scoreboard'],
        ['6 worked scenarios', '19/19 checks', 'same command'],
        ['Agent loop and claim gate', '21/21', 'python -m tests.test_agent_loop'],
-       ['Workspace and chat pane', '67 checks', 'node tests/ui_check.js'],
+       ['Workspace and chat pane', '119 checks', 'node tests/ui_check.js'],
        ['38 questions through the agent', '35/36 re-scored, not re-run live', 'python -m aircrew.replay']]
         .forEach(row => {
           const tr = el('tr');
@@ -827,7 +913,7 @@ function renderAnswer(text){
     .replace(/`([^`]+)`/g, '<code>$1</code>');
   let list = null;
 
-  for(const raw of String(text || '').split('\n')){
+  for(const raw of inrGroups(text).split('\n')){
     const line = raw.replace(/\s+$/, '');
     if(!line.trim()){ list = null; continue; }
 
@@ -869,11 +955,19 @@ function say(who, text, cls){
   return m;
 }
 function trace(m, calls){
-  if(!calls || !calls.length) return;
   const t = el('div','trace');
+  if(!calls || !calls.length){
+    // The only thing marking an uncomputed answer was the absence of this row,
+    // and an absence is not a cue. An opinion says it is one, in the same place
+    // the tool chips would have been.
+    t.appendChild(el('span','uncomputed','not computed — advisory opinion'));
+    m.appendChild(t);
+    return t;
+  }
   t.appendChild(document.createTextNode('computed by '));
   calls.forEach(c => t.appendChild(el('span', null, c.name)));
   m.appendChild(t);
+  return t;
 }
 
 /* --- workspace ---------------------------------------------------------- */
@@ -920,13 +1014,35 @@ function pushPanels(nodes, label){
 
 /* The workspace saying, in its own words, that this turn produced nothing.
    Leaving the previous question's panel up is the one failure the product
-   promises cannot happen: the prose and the evidence would disagree. */
-function clearPanels(head, body){
+   promises cannot happen: the prose and the evidence would disagree.
+
+   The title is a parameter because there is more than one kind of nothing;
+   `emptyState` below decides which one this turn is. */
+function clearPanels(head, body, title){
   viewStack.length = 0;
-  const p = panel('Nothing computed for this question');
+  const p = panel(title || 'Nothing computed for this question');
   p.appendChild(stateBlock('', head, body));
   currentView = {nodes: [p], label: ''};
   paintView();
+}
+
+/* Two different nothings, and the copy for one is a lie about the other.
+
+   A turn where no tool ran is an opinion, and saying the answer came from the
+   conversation is exactly right. A turn where a tool ran and no panel knows its
+   shape is a computed answer that simply has no drawing -- and there the same
+   words put the workspace in direct contradiction with a chat footer reading
+   "computed by earliest_next_report", with the workspace as the liar. */
+function emptyState(r){
+  return (r.tool_results || []).length
+    ? ['Computed, not drawn',
+       'The engine answered this; the figure is in the reply. ' +
+       'This result has no workspace panel.',
+       'No panel for this result']
+    : ['No engine result for this question',
+       'This answer came from the conversation, not from a new computation. ' +
+       'The last workspace view is still reachable from its own answer.',
+       'Nothing computed for this question'];
 }
 
 function popPanels(){
@@ -1031,6 +1147,18 @@ function pResolve(env){
         act.appendChild(b);
       }
       tr.appendChild(act); tb.appendChild(tr);
+      // v1 named the seven rules as chips under the recommended row, and that
+      // is what makes "legal on all seven rules" readable without opening
+      // anything. Row 1 only: repeated down the table it is wallpaper, and the
+      // rows below already carry a legal/illegal badge.
+      if(o.rank === 1 && o.legal && (o.rules_checked || []).length){
+        const cr = el('tr','checks');
+        const cell = el('td');
+        cell.colSpan = 7;
+        cell.appendChild(el('span','k','checks'));
+        o.rules_checked.forEach(r => cell.appendChild(ruleTag(r, 'ok')));
+        cr.appendChild(cell); tb.appendChild(cr);
+      }
     });
     t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
   }
@@ -1050,7 +1178,12 @@ function pResolve(env){
     const byRule = {};
     d.exclusions.forEach(x => (byRule[x.rule] = byRule[x.rule] || []).push(x));
     const order = Object.keys(byRule).sort((a, b) => byRule[b].length - byRule[a].length);
-    const shape = order.map(r => byRule[r].length + ' ' + (gloss(r) ? r.split('-')[1].toLowerCase() : r)).join(', ');
+    // The engine already writes this sentence for the headline figure above.
+    // Printing it a second time in a second vocabulary made the panel disagree
+    // with its own header, so the header's string wins and the fallback uses
+    // the same words.
+    const shape = d.exclusions_orientation ||
+      order.map(r => byRule[r].length + ' ' + (RULE_WORD[r] || r)).join(', ');
 
     ep.appendChild(more('Every candidate considered', d.exclusions.length + ' ruled out', () => {
       const ul = el('ul', 'excl-list');
@@ -1076,7 +1209,23 @@ function pResolve(env){
   return out;
 }
 
-function pTimeline(env, title){
+/* A cost note says what it costs. The breach message is worded for a breach
+   ("based DEL, pairing departs BLR"), which is not what this is. */
+function costPhrase(x){
+  const c = x.context || {};
+  if(c.needs_positioning && c.base) return 'deadhead positioning from ' + c.base;
+  return x.message;
+}
+
+/* Not every rule in a timeline stops the duty. RULE-BASE-07 against a candidate
+   who is being positioned costs a deadhead and some delay; it does not make the
+   assignment illegal, and the check panel directly above says so in green. A red
+   badge under a green verdict reads as a contradiction, and in this palette red
+   is reserved for the thing that stops you. `stoppers` is the set of rules the
+   enclosing check actually counted against the assignment; anything else the
+   timeline turns up is a cost, and wears amber. Absent, everything is a breach,
+   which is right for a timeline asked for on its own. */
+function pTimeline(env, title, stoppers){
   const d = env.data;
   const p = panel(title || ('Duty week — ' + esc(d.crew_id)), d.duties.length + ' duty days');
   const rail = el('div','rail');
@@ -1096,17 +1245,22 @@ function pTimeline(env, title){
     const bar = el('div','bar');
     bar.appendChild(el('div','t', hhmm(row.report_utc) + ' → ' + hhmm(row.release_utc) +
       '   ' + row.fdp_hours + 'h / ' + row.fdp_limit + 'h limit'));
+    // The date is the row label two columns to the left, so the ids lose it.
     bar.appendChild(el('div','m', (row.proposed ? 'PROPOSED COVER · ' : '') + row.pairing_id +
-      ' · ' + row.aircraft + ' · ' + row.sectors + ' sectors · ' + row.flights.join(', ')));
+      ' · ' + row.aircraft + ' · ' + row.sectors + ' sectors · ' +
+      row.flights.map(legNo).join(', ')));
     day.appendChild(bar); rail.appendChild(day);
   });
   p.appendChild(rail);
   if(d.breaches && d.breaches.length){
     const b = el('div','pad');
     d.breaches.forEach(x => {
+      const cost = stoppers ? !stoppers.has(x.rule) : false;
       const line = el('div'); line.style.marginBottom = '5px';
-      const tag = el('span','tag illegal', x.rule); line.appendChild(tag);
-      line.appendChild(document.createTextNode(' ' + x.message));
+      const tag = el('span', 'tag ' + (cost ? 'warn' : 'illegal'),
+                     (cost ? 'cost: ' : '') + x.rule);
+      line.appendChild(tag);
+      line.appendChild(document.createTextNode(' ' + (cost ? costPhrase(x) : x.message)));
       if(x.text){ const s = el('div'); s.style.cssText='font-size:12px;color:var(--ink-faint);margin-left:2px';
         s.textContent = x.text; line.appendChild(s); }
       b.appendChild(line);
@@ -1141,7 +1295,12 @@ function pCheck(env){
     'Read the one you asked.'));
   const cl = claimList(env); if(cl) p.appendChild(cl);
   out.push(p);
-  if(d.timeline) out.push(...pTimeline({data:d.timeline}, 'Duty week with the proposed cover inserted'));
+  // The timeline recomputes the week without knowing whether positioning was
+  // allowed, so it can carry a rule this check does not hold against anyone.
+  // Hand it the rules that actually stopped the assignment; the rest are costs.
+  if(d.timeline) out.push(...pTimeline({data:d.timeline},
+    'Duty week with the proposed cover inserted',
+    new Set((d.rules.breaches || []).map(x => x.rule))));
   return out;
 }
 
@@ -1166,7 +1325,7 @@ function pTrace(env){
   // Flight numbers as chips: DX412 reads, DX412-2026-09-15 does not, and the
   // date is already the row it sits in.
   const legs = el('div','legs');
-  d.day1.forEach(f => legs.appendChild(el('span','leg', String(f).split('-')[0])));
+  d.day1.forEach(f => legs.appendChild(el('span','leg', legNo(f))));
   p.appendChild(legs);
   const tw = el('div','tw'), t = el('table');
   t.innerHTML = '<thead><tr><th>Date</th><th>Passengers</th><th>Report</th><th>Release</th><th>Flights</th></tr></thead>';
@@ -1177,7 +1336,7 @@ function pTrace(env){
     tr.appendChild(el('td','num', day.passengers));
     tr.appendChild(el('td','num', hhmm(day.report_utc)));
     tr.appendChild(el('td','num', hhmm(day.release_utc)));
-    tr.appendChild(el('td', null, day.flights.map(f => String(f).split('-')[0]).join(', ')));
+    tr.appendChild(el('td', null, day.flights.map(legNo).join(', ')));
     tb.appendChild(tr);
   });
   t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
@@ -1208,7 +1367,9 @@ function pDelay(env){
       tr.appendChild(el('td','num', o.rank));
       tr.appendChild(el('td','cost', inr(o.cost_inr)));
       tr.appendChild(el('td', null, o.action));
-      tr.appendChild(el('td', null, o.reasoning));
+      // The why is the whole argument for the option, and nowrap cut it at
+      // "Reserve set cove...". It is the one cell here that is a sentence.
+      tr.appendChild(el('td','wrap', o.reasoning));
       tb.appendChild(tr);
     });
     t.appendChild(tb); tw.appendChild(t); op.appendChild(tw); out.push(op);
@@ -1242,7 +1403,7 @@ function pClosure(env){
       if(bad) fd.style.color = 'var(--red)';
       tr.appendChild(fd);
       tr.appendChild(el('td','num', r.fdp_limit + 'h'));
-      tr.appendChild(el('td', null, r.flight_id));
+      tr.appendChild(el('td', null, legNo(r.flight_id)));
       tr.appendChild(el('td', null, r.pairing_id || '—'));
       tr.appendChild(el('td', null, r.action));
       tb.appendChild(tr);
@@ -1290,17 +1451,65 @@ function pNotify(env){
   return [p];
 }
 
+/* One cell. An array is a list, an on-call window is a window, and a flight id
+   drops the date it repeats from the row it is in. Everything else is text. */
+function cellText(v){
+  if(Array.isArray(v)) return v.map(x => isFlightId(x) ? legNo(x) : esc(x)).join(', ');
+  const win = windowText(v);
+  if(win) return win;
+  if(isFlightId(v)) return legNo(v);
+  return esc(v);
+}
+
+/* What the reply named, so a table can put it first.
+
+   This does not weaken invariant 1: every value in the table still comes from
+   the tool result, and the reply only decides the order of rows and a marker on
+   them. Q12 answered "DX401, DX402, DX588, DX589" over a table of eight other
+   flights with DX588 not among them, which is a 147-row dump next to a four-row
+   answer. */
+let answerText = '';
+function setAnswerText(t){ answerText = String(t ?? ''); }
+const ID_IN_PROSE = /\b(?:[A-Z]{2}\d{3,4}|C-\d{4}|P-\d{4}|VT-[A-Z]{3})\b/g;
+const namedIds = () => new Set(String(answerText).match(ID_IN_PROSE) || []);
+function rowIsNamed(r, ids){
+  if(!ids.size) return false;
+  return Object.keys(r).some(k => {
+    const v = r[k];
+    return typeof v === 'string' && (ids.has(v) || (isFlightId(v) && ids.has(legNo(v))));
+  });
+}
+
 function pTable(env, title){
   const d = env.data;
-  const rows = d.flights || d.crew || d.reserves || d.certifications || d.pairings || null;
-  if(!rows || !rows.length){
+  const all = d.flights || d.crew || d.reserves || d.certifications || d.pairings || null;
+  if(!all || !all.length){
     const p = panel(title || 'Lookup');
     p.appendChild(stateBlock('', 'Nothing matched',
       'The filters returned no rows. Check the date, or drop one filter and look again.'));
     return [p];
   }
-  const cols = Object.keys(rows[0]).filter(k => typeof rows[0][k] !== 'object' || Array.isArray(rows[0][k]));
-  const p = panel(title || 'Lookup', rows.length + ' rows');
+  // An object column used to be dropped whole, which is how a question about
+  // on-call windows got a table with no window in it. A window renders; any
+  // other nested payload is still unreadable in a cell and still goes.
+  const cols = Object.keys(all[0]).filter(k => {
+    const v = all[0][k];
+    if(v === null) return false;
+    if(typeof v !== 'object') return true;
+    return Array.isArray(v) || windowText(v) !== null;
+  });
+  // Once the date is off the flight id, FLIGHT ID and FLIGHT NO are the same
+  // column twice. Keep the one whose header a controller reads.
+  if(cols.includes('flight_id') && cols.includes('flight_no') &&
+     all.every(r => legNo(r.flight_id) === r.flight_no))
+    cols.splice(cols.indexOf('flight_id'), 1);
+
+  const ids = namedIds();
+  const named = ids.size ? all.filter(r => rowIsNamed(r, ids)) : [];
+  const hoisted = named.length > 0 && named.length < all.length;
+  const rows = hoisted ? named.concat(all.filter(r => named.indexOf(r) < 0)) : all;
+
+  const p = panel(title || 'Lookup', all.length + ' rows');
   const tw = el('div','tw'), t = el('table');
   const thead = el('thead'), htr = el('tr');
   cols.forEach(c => htr.appendChild(el('th', null, c.replace(/_/g,' '))));
@@ -1308,18 +1517,25 @@ function pTable(env, title){
   const tb = el('tbody');
   const rowNode = r => {
     const tr = el('tr');
-    cols.forEach(c => {
+    const mark = hoisted && named.indexOf(r) >= 0;
+    if(mark) tr.className = 'named';
+    cols.forEach((c, i) => {
       const v = r[c];
-      tr.appendChild(el('td', typeof v === 'number' ? 'num' : null,
-                        Array.isArray(v) ? v.join(', ') : esc(v)));
+      const td = el('td', typeof v === 'number' ? 'num' : null, cellText(v));
+      if(mark && i === 0) td.appendChild(el('span','named-mark','in the reply'));
+      tr.appendChild(td);
     });
     return tr;
   };
   // 142 crew is a scroll, not an answer. Show enough to see the shape of the
   // result, and fold the rest behind a count that says what is being held back.
-  const HEAD = 8, CAP = 120;
+  // A row the answer named is never folded: it is the answer.
+  const CAP = 120;
+  const HEAD = Math.min(Math.max(8, named.length), 20);
   rows.slice(0, HEAD).forEach(r => tb.appendChild(rowNode(r)));
   t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
+  if(hoisted) p.appendChild(el('div','note',
+    'The ' + named.length + ' rows the answer names are shown first.'));
 
   if(rows.length > HEAD){
     const shown = Math.min(rows.length, CAP);
@@ -1337,6 +1553,31 @@ function pTable(env, title){
       return tw2;
     }));
   }
+  const cl = claimList(env); if(cl) p.appendChild(cl);
+  return [p];
+}
+
+/* Rest is one subtraction, so this panel is three figures and a caveat. It
+   exists because without it the tool had no case in panelsFor, the turn drew
+   nothing, and the workspace announced that nothing had been computed while
+   the chat footer named the tool that had computed it. */
+function pEarliest(env){
+  const d = env.data;
+  const p = panel('Earliest next report');
+  const head = el('div','headline');
+  const fig = (k,v,s,cls) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
+    f.appendChild(el('div','v ' + (cls||''), v)); if(s) f.appendChild(el('div','s',s));
+    head.appendChild(f); };
+  fig('Released', hhmm(d.released_utc), dayOf(d.released_utc));
+  fig('Rest required', d.min_rest_hours + 'h', 'minimum between duties');
+  // Amber: this is the figure the controller writes down.
+  fig('Earliest report', hhmm(d.earliest_report_utc), dayOf(d.earliest_report_utc), 'accent');
+  p.appendChild(head);
+  const note = el('div','note');
+  note.appendChild(ruleTag(d.rule || 'RULE-REST-04'));
+  note.appendChild(document.createTextNode(
+    ' — minimum only; a specific duty still needs a legality check.'));
+  p.appendChild(note);
   const cl = claimList(env); if(cl) p.appendChild(cl);
   return [p];
 }
@@ -1362,19 +1603,20 @@ function panelsFor(name, args, env){
     return [p];
   }
   switch(name){
-    case 'resolve_cover':       return env.data.per_vacancy ? pJoint(env) : pResolve(env);
-    case 'check_assignment':    return pCheck(env);
-    case 'duty_timeline':       return pTimeline(env);
-    case 'trace_disruption':    return pTrace(env);
-    case 'crew_profile':        return pProfile(env);
-    case 'draft_notification':  return pNotify(env);
-    case 'validate':            return pValidate(env);
+    case 'resolve_cover':        return env.data.per_vacancy ? pJoint(env) : pResolve(env);
+    case 'check_assignment':     return pCheck(env);
+    case 'duty_timeline':        return pTimeline(env);
+    case 'trace_disruption':     return pTrace(env);
+    case 'crew_profile':         return pProfile(env);
+    case 'draft_notification':   return pNotify(env);
+    case 'earliest_next_report': return pEarliest(env);
+    case 'validate':             return pValidate(env);
     case 'simulate_disruption':
       if(args && args.kind === 'closure') return pClosure(env);
       if(args && args.kind === 'cancellation') return pTable(env, 'Cancellation cost');
       return pDelay(env);
-    case 'lookup':              return pTable(env, 'Lookup — ' + (args && args.entity || ''));
-    default:                    return [];
+    case 'lookup':               return pTable(env, 'Lookup — ' + (args && args.entity || ''));
+    default:                     return [];
   }
 }
 
@@ -1404,7 +1646,23 @@ function pJoint(env){
     'is yours, and it turns on reachability.'));
   const cl = claimList(env); if(cl) p.appendChild(cl);
   out.push(p);
-  (d.per_vacancy || []).forEach(v => out.push(...pResolve({data:v, claims:[], missing:[]})));
+  // The plan above is the answer. Each vacancy's full ranked table is the
+  // working behind one line of it, and two thirteen-row tables open below the
+  // fold bury the plan they support. One summary line each, which says enough
+  // to not need opening: what was ranked, how many options, and who won.
+  (d.per_vacancy || []).forEach(v => {
+    const rec = v.recommended && (v.recommended.crew_id || 'cancellation');
+    const f = more('Ranked cover — ' + esc(v.pairing_id) + ' ' + esc(v.role),
+      (v.option_count || (v.options || []).length) + ' options',
+      () => {
+        const box = el('div');
+        pResolve({data:v, claims:[], missing:[]}).forEach(n => box.appendChild(n));
+        return box;
+      },
+      {why: rec ? 'recommended ' + rec : ''});
+    f.classList.add('standalone');
+    out.push(f);
+  });
   return out;
 }
 
@@ -1522,6 +1780,7 @@ function buildStarters(){
       say('Controller', label, 'you');
       try{
         const env = await runTool(tool, args);
+        setAnswerText(env.summary);
         const n = say('Engine', env.summary, 'note');
         trace(n, [{name: tool}]);
         const steps = drawableSteps({tool_results:[env], tool_calls:[{name:tool, arguments:args}]});
@@ -1542,6 +1801,9 @@ $('#composer').addEventListener('submit', async ev => {
   try{
     const r = await api('/api/chat', {message: q});
     pending.remove();
+    // A table can put the rows this answer names first, so it has to know what
+    // they are before anything is drawn.
+    setAnswerText(r.reply);
     const m = say('Advisor', renderAnswer(r.reply));
     trace(m, r.tool_calls);
     // The gate firing is the product working, so say that. It is also detail a
@@ -1558,9 +1820,7 @@ $('#composer').addEventListener('submit', async ev => {
       // Invariant 3: never leave the previous question's evidence on screen
       // next to this question's answer. They would disagree, and the panel is
       // the thing a controller acts on.
-      clearPanels('No engine result for this question',
-        'This answer came from the conversation, not from a new computation. ' +
-        'The last workspace view is still reachable from its own answer.');
+      clearPanels(...emptyState(r));
       markShown(null);
     }
   }catch(e){

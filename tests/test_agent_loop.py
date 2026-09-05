@@ -501,6 +501,30 @@ def test_the_corrective_turn_may_take_more_than_one_tool_round():
     assert len(turn.tool_calls) == 3, turn.tool_calls
 
 
+def test_the_engine_runs_with_no_filesystem():
+    # The deployed Worker has no problem_statement/data to read, so the tables
+    # arrive as a bundled module. If that path can drift from the file path,
+    # the deployed engine is a second engine -- so it is checked, not assumed.
+    import json
+    from pathlib import Path
+
+    from aircrew import data as ds
+
+    tables = {n: json.loads((Path(ds.__file__).resolve().parent.parent
+                             / "problem_statement" / "data" / f"{n}.json")
+                            .read_text(encoding="utf-8"))
+              for n in ds.REQUIRED}
+    bundled = Tools(ds.Dataset(records=tables))
+    onfile = Tools()
+    for name, args in [
+        ("resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"}),
+        ("check_assignment", {"crew_id": "C-2087", "pairing_id": "P-2291"}),
+        ("crew_profile", {"crew_id": "C-1042"}),
+    ]:
+        assert (dispatch(bundled, name, args)["data"]
+                == dispatch(onfile, name, args)["data"]), name
+
+
 if __name__ == "__main__":
     import sys
 
