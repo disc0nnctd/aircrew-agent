@@ -1698,10 +1698,26 @@ function pNotify(env){
 
 /* One cell. An array is a list, an on-call window is a window, and a flight id
    drops the date it repeats from the row it is in. Everything else is text. */
+/* An object in a cell used to render as "[object Object]": a pairing's `days`
+   and `crew` are lists of records, and "Is P-2291 a valid pairing?" answered
+   with six of them in a row. A record is summarised by the field a controller
+   would read it by -- the crew id, the date -- not dumped and not dropped. */
 function cellText(v){
-  if(Array.isArray(v)) return v.map(x => isFlightId(x) ? legNo(x) : esc(x)).join(', ');
-  const win = windowText(v);
-  if(win) return win;
+  if(Array.isArray(v)) return v.map(x => cellText(x)).join(', ');
+  if(v && typeof v === 'object'){
+    const win = windowText(v);
+    if(win) return win;
+    // A duty day: the date, and how many legs are on it.
+    if(v.date && Array.isArray(v.flights))
+      return esc(v.date) + ' (' + v.flights.map(legNo).join(' ') + ')';
+    // Anyone with a role: "C-1042 Captain".
+    if(v.crew_id) return esc(v.crew_id) + (v.role ? ' ' + esc(v.role) : '');
+    const first = ['flight_no','flight_id','pairing_id','name','id','label']
+      .find(k => v[k] != null);
+    if(first) return cellText(v[first]);
+    return esc(Object.values(v).filter(x => x != null && typeof x !== 'object')
+                 .slice(0, 2).join(' '));
+  }
   if(isFlightId(v)) return legNo(v);
   return esc(v);
 }
