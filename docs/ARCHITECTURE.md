@@ -141,3 +141,8 @@ The same rule, applied to pixels.
   workspace therefore works with the model switched off — which is the demo's
   safety net and, on a crew desk, the difference between degraded and dead.
 - A turn that draws no panel leaves the workspace alone.
+
+---
+
+Build notes, dataset measurements and the reverse-engineering log are in
+[NOTES.md](NOTES.md); worked transcripts in [SAMPLES.md](SAMPLES.md).

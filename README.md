@@ -73,7 +73,7 @@ aircrew/
   cli.py         the engine from a terminal, no model
   server.py      stdlib HTTP; /api/tool and /api/chat
 web/index.html   the two-pane workspace, no build step
-docs/            architecture, samples, deck
+docs/            architecture, samples, build notes, deck
 ```
 
 ## Approach
@@ -152,7 +152,16 @@ a gate that fires on correct answers gets switched off.
 
 **One case the system handles poorly** — a paid callout for someone already
 working the pairing — is documented with analysis in
-[docs/SAMPLES.md](docs/SAMPLES.md#e-a-case-the-system-handles-poorly).
+[docs/SAMPLES.md](docs/SAMPLES.md#e-a-case-the-system-handles-poorly). Two more
+places where the reference contradicts itself, and everything that was tried and
+thrown away, are in [docs/NOTES.md](docs/NOTES.md).
+
+**Two of the seven rules never eliminate anybody.** Across all 156 (pairing,
+role) vacancies in the roster, RULE-FDP-01 and RULE-FLT-03 produce zero
+exclusions — the maximum 28-day block in the whole dataset is 79.28h against a
+100h limit. Both are still reported in `rules_checked` because the keys require
+it, but "we checked seven rules" would overstate what happened. Measurements in
+[docs/NOTES.md §3](docs/NOTES.md#3-the-surprise-which-rules-actually-bind).
 
 **Three questions have rubrics for answer keys** (Q30, Q36, Q38). They are
 marked `GEN` and never counted as passes; grading a rubric against itself is a
