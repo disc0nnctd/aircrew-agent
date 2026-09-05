@@ -1272,13 +1272,20 @@ function stateBlock(kind, head, body){
 /* What this result licenses the model to say. Two or three is orientation;
    nine is a wall, and it is audit material rather than a finding, so past
    three it folds. */
+const BREACH_RE =
+  /\billegal\b|\bbreach|\bcannot\b|\bexceed|\bexpired\b|\boverlaps\b|double-booked|not rated|\bnot callable\b/i;
+
 function claimList(env){
   if(!env.claims || !env.claims.length) return null;
   const build = (from) => {
     const ul = el('ul');
     from.forEach(c => {
       const li = el('li'); li.appendChild(el('code', null, c.id));
-      reasonWithRules(li, ' ' + c.text, 'ok');
+      // The tone comes from what the claim says, not from the fact that it is
+      // a claim. Every rule id in this list used to be green -- including the
+      // one in "C-3940 on P-2291 is illegal: RULE-REST-04 ..." -- which reads
+      // as "this rule passed" directly above the same rule in red.
+      reasonWithRules(li, ' ' + c.text, BREACH_RE.test(c.text) ? 'bad' : 'ok');
       ul.appendChild(li);
     });
     return ul;
@@ -1299,7 +1306,7 @@ function claimList(env){
    the same information said twice, once in JSON. */
 function missingNote(env, drop){
   const items = (env.missing || []).filter(m =>
-    !/data\.[a-z_]+/i.test(m) && !(drop || []).some(d => m.includes(d)));
+    !/\bdata\.[a-z_]+/i.test(m) && !(drop || []).some(d => m.includes(d)));
   if(!items.length) return null;
   return el('div','note', 'Not established here: ' + items.join('; '));
 }

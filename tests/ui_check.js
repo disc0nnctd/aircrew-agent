@@ -67,6 +67,17 @@ setTimeout(async () => {
   // ("...deadhead from DEL (first departure delayed ~3.0h)") pushed Base, Delay
   // and the inspect link behind a horizontal scrollbar -- the three columns a
   // controller compares between rows.
+  // A claim that reports a breach must not carry a green rule chip: it sat
+  // directly above the same rule in red, in the same panel.
+  const claimTones = w.claimList({claims: [
+    {id: 'c1', text: 'C-3940 on P-2291 is illegal: RULE-REST-04: overlaps COVER by 6.75h'},
+    {id: 'c2', text: 'C-3310 on P-2291 is legal under all seven rules'},
+  ]});
+  const tones = [...claimTones.querySelectorAll('.rule-tag')].map(t => t.className);
+  check('a breach claim renders its rule in red',
+        tones.some(c => c.includes('bad')), tones.join(' / '));
+  check('and a passing claim does not', !tones.some(c => c.includes('bad') && c.includes('ok')));
+
   const ranked = w.document.querySelector('table.ranked');
   check('ranked table is fixed-layout', !!ranked);
   check('its columns are declared', !!ranked && ranked.querySelectorAll('colgroup col').length === 7,

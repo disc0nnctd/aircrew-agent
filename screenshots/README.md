@@ -21,3 +21,7 @@ published dataset, driven through the browser — nothing here is a mockup.
 | `14-briefing.png` | The technical briefing, behind the dev-view checkbox |
 | `15-settings.png` | Choosing a provider. The deployment holds no key; this one stays in the browser |
 | `16-edge-answer.png` | The same flagship answer, served from a Cloudflare Worker |
+| `17-legal-if-positioned.png` | The ranked table fitting its pane, with C-2210 amber: legal, but only if positioned |
+| `18-inspect-positioned.png` | Inspecting that row in the scenario it was ranked under — legal on all seven rules |
+| `19-inspect-rest.png` | A candidate ruled out on rest: 10.75h before their next pairing, against a 12h minimum |
+| `20-inspect-double-booked.png` | A candidate already flying: P-2202 overlaps the cover by 6.75h, so the rest gap is negative |
