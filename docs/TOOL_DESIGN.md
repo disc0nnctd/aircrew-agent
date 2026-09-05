@@ -104,7 +104,60 @@ for x in env["data"]["exclusions"]:
 assert len(json.dumps(env)) < 13000
 ```
 
-## The four rules the tool surface follows
+## Two defects that look alike on a size chart and are not
+
+A second bug in this codebase also showed up as an oversized payload, and
+treating it as the same problem would miss the point.
+
+`lookup(entity="crew")` advertised a `crew_id` parameter in its schema, accepted
+it, and never passed it to the query. "What is C-2210's base and rating?"
+therefore returned every active crew member:
+
+```
+lookup(entity="crew")                 15,099 chars  ~3,774 tokens
+lookup(entity="crew", crew_id=…)       1,960 chars    ~490 tokens
+                                                        8x
+```
+
+The right answer was in there — `C-2210 → {base: DEL, ratings: [A320]}`, in row
+142 of 142. The data was not missing. It was buried, under a summary that read
+**"142 crew match"**.
+
+| | `all_breaches` | `crew_id` accepted and ignored |
+| --- | --- | --- |
+| Extra payload | 13,232 chars | ~3,300 tokens per call |
+| Was the answer present? | not applicable, nothing read it | yes, in row 142 |
+| What the summary said | accurate | a true sentence about a question nobody asked |
+| Failure mode | cost only | cost, plus confident mis-direction |
+| Found by | auditing sizes | running the thing |
+
+`all_breaches` was **pure freight**: expensive and otherwise harmless. No output
+changed when it was removed.
+
+The `crew_id` bug was **mis-scoping**, and the bloat was a symptom rather than
+the disease. Three things were wrong at once:
+
+1. **The schema lied.** A parameter that is accepted and silently dropped is
+   worse than one that does not exist, because the model believes it filtered
+   and has no way to detect otherwise.
+2. **The summary was true about the wrong question.** Summaries steer the model
+   harder than data does, so it steers confidently in the wrong direction.
+3. **It pushed the filtering back into the model.** Answering would mean
+   scanning 142 rows and picking one. That is the same family of mistake as
+   making it do arithmetic: work that belongs in Python, handed to the component
+   whose output cannot be checked.
+
+The rule that falls out of the pair: **waste costs tokens and is recoverable;
+mis-scoping costs trust and is silent.** A size audit finds the first. Only
+running the system finds the second — which is how both of these actually
+surfaced, one from measuring the heaviest call and one from a live session
+where a Tier-1 question had nowhere clean to land.
+
+To be precise about what was observed: the tool returned 142 rows under that
+summary. It was not caught producing a wrong answer to a controller. It was a
+hazard that was fixed before it became an incident.
+
+## The five rules the tool surface follows
 
 **1. A tool joins files when the join is the answer.** "Can this person cover
 this pairing?" is inherently a join across roster, crew, clocks, certificates,
@@ -125,6 +178,12 @@ ranking. Folding it into `resolve_cover` would make the cheap question cost
 **4. Every field must have a reader.** A tool result is context the model pays
 for on every subsequent turn of the conversation, not just once. `all_breaches`
 is the cautionary tale.
+
+**5. Every advertised parameter must do something.** If the schema names it, the
+query must use it. A silently dropped filter is not a small bug: it returns a
+confident, correct-looking result for a question nobody asked, and it hands the
+filtering back to the model. `crew_id` on `entity="crew"` is that cautionary
+tale, and it is a different one from `all_breaches`.
 
 ## The honest trade-offs
 
