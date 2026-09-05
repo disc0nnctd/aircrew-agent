@@ -1,17 +1,4 @@
-# credentials: never commit
-.env
-.env.*
-*.env
-*.key
-.keys
-private/
-
-# python
 __pycache__/
-*.py[cod]
-.pytest_cache/
+*.pyc
+.env
 .venv/
-venv/
-
-# the answer-key generator stays out of this branch
-generate.py
