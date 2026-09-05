@@ -1,4 +1,19 @@
 __pycache__/
 *.pyc
-.env
 .venv/
+
+# Secrets. The keys for this demo live in private/ and reach the server through
+# the environment; nothing here is ever committed.
+.env
+.env.*
+*.env
+private/
+**/Keys/
+
+# Organiser-internal: the generator reveals how the answer keys were derived,
+# and this branch exists so the rules are recovered from the data instead.
+generate.py
+
+# Scratch
+ps.txt
+node_modules/
