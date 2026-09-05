@@ -117,7 +117,15 @@ class Tools:
             f"{dates[-1]}. No result was computed -- check the year.",
             {"error": "date outside schedule", "requested": on_date,
              "schedule_from": dates[0], "schedule_to": dates[-1]},
-            [],
+            # The refusal is the answer here, so give the model something to
+            # cite. Without it the reply came back as "no schedule result was
+            # computed", which reads as the system failing rather than the
+            # system declining to invent a week it does not have.
+            [claim("verdict",
+                   f"{on_date} is outside the schedule, which covers "
+                   f"{dates[0]} to {dates[-1]}, so nothing was computed",
+                   {"requested": on_date, "from": dates[0], "to": dates[-1]},
+                   ["flights.json"])],
             ["this is not an empty result; nothing was computed"],
         )
 
@@ -567,6 +575,20 @@ class Tools:
                 claim("verdict", f"the cheapest legal option is {rec['action']} at {inr(rec['cost_inr'])}",
                       rec, ALL_RULES + ["costs.json"])
             )
+            # How many share the winning price. Without this the model counts
+            # the rows itself and gets it slightly wrong -- "three other
+            # candidates are tied" when two others were -- which is a figure
+            # the gate cannot catch, because every number in the sentence is
+            # real. Counting is the engine's job, so the engine counts.
+            tied = [o for o in d["options"]
+                    if o.get("crew_id") and o["cost_inr"] == rec["cost_inr"]]
+            if len(tied) > 1:
+                cl.append(
+                    claim("number",
+                          f"{len(tied)} legal options tie at {inr(rec['cost_inr'])}, "
+                          f"so cost does not separate them",
+                          len(tied), ["costs.json"])
+                )
         for o in d["options"]:
             cl.append(
                 claim("number", f"{o['action']} costs {inr(o['cost_inr'])}", o["cost_inr"], ["costs.json"])

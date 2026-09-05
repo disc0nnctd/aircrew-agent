@@ -23,7 +23,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-CLAIM_RE = re.compile(r"\{\{claim:(c\d+)\}\}")
+# The documented form is {{claim:c3}}, but a model that writes {claim:c3}
+# once in twenty turns puts a raw token on a controller's screen, which
+# looks broken and hides the figure. Accept either, and tolerate spaces.
+CLAIM_RE = re.compile(r"\{\{?\s*claim:\s*(c\d+)\s*\}?\}")
+
+# Anything still shaped like a placeholder after substitution never reaches
+# the screen: it means the model cited an id this turn does not have.
+LEFTOVER_RE = re.compile(r"\{\{?\s*claim:[^}]*\}?\}")
 
 # Numbers a controller reads and acts on. Ordinals, list positions and years are
 # not figures in this sense, so a short allowlist keeps the gate from crying
@@ -167,7 +174,7 @@ def _fit(text: str, before: str) -> str:
         if not rest:
             continue
         prefix = words[:n]
-        for k in range(n, 1, -1):
+        for k in range(n, 0, -1):
             if typed.endswith(" ".join(prefix[n - k:]).lower()) and safe(prefix):
                 return rest
     return text
@@ -200,7 +207,11 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
     # A verdict with no tool result behind it at all.
     unbacked = bool(VERDICT_RE.search(typed)) and not tool_results
 
-    unknown_claim = any(cid not in claims for cid in used)
+    # A placeholder that survived substitution is an id this turn does not
+    # have. It must not reach the controller as a raw token, so the turn is
+    # failed and regenerated rather than printed with {claim:c9} in the prose.
+    leftover = bool(LEFTOVER_RE.search(rendered))
+    unknown_claim = any(cid not in claims for cid in used) or leftover
     return Grounding(
         ok=not ungrounded and not unbacked and not unknown_claim,
         ungrounded_numbers=sorted(set(ungrounded)),

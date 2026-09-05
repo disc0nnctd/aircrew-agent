@@ -17,3 +17,6 @@ generate.py
 # Scratch
 ps.txt
 node_modules/
+
+# duplicate of problem_statement/problem_explanation_k66g3nx88t.pdf
+/problem_explanation_k66g3nx88t.pdf

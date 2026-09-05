@@ -14,7 +14,7 @@ import json
 
 from aircrew import grounding
 from aircrew.agent import Agent
-from aircrew.tools import Tools, dispatch
+from aircrew.tools import Tools, dispatch, renumber
 
 
 # --- a stub model endpoint ------------------------------------------------
@@ -81,6 +81,25 @@ def test_figure_present_in_tool_data_is_allowed():
 def test_rule_limits_are_not_flagged():
     g = grounding.check("RULE-DUTY-02 caps duty at 60 hours in any 7 days.", [])
     assert g.ok
+
+
+def test_a_single_brace_placeholder_is_still_substituted():
+    """The documented form is {{claim:c3}}. luna writes {claim:c3} often enough
+    that raw tokens reached the screen in a live run, which looks broken and
+    hides the figure. Both forms substitute; anything still placeholder-shaped
+    afterwards fails the turn rather than being printed."""
+    t = Tools()
+    env = dispatch(t, "resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"})
+    renumber([env])
+    for form in ("{{claim:c1}}", "{claim:c1}", "{{ claim: c1 }}"):
+        g = grounding.check(f"There are {form}.", [env])
+        assert g.ok, form
+        assert "5 candidates are legal" in g.rendered, form
+        assert "claim:" not in g.rendered, form
+
+    # an id this turn does not have is never printed as a token
+    bad = grounding.check("Assign {claim:c99}.", [env])
+    assert not bad.ok
 
 
 def test_a_claim_does_not_repeat_what_the_model_already_wrote():

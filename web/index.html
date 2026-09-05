@@ -50,7 +50,7 @@ body{
    change on focus/hover, which is feedback, not animation. */
 *,*::before,*::after{animation:none!important}
 a,button,[tabindex]{transition:background-color .09s,border-color .09s,color .09s}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:3px}
 
 /* --- shell ---------------------------------------------------------------
    Two panes, conversation left at a fixed comfortable measure, workspace right
@@ -480,8 +480,19 @@ function ruleTag(rule, tone){
    stay plain text. Multiple findings are joined with "; " by the engine and
    are put on their own lines here, because two reasons in one line read as
    one reason. */
+/* "only -6.75h rest before COVER" is what the answer keys contain, so the
+   engine says exactly that and the scoreboard checks it byte for byte. A
+   negative rest figure is still not a thing anyone says out loud, and it reads
+   as a bug, so the wording is softened here at the point of display and
+   nowhere else. Same fact, same numbers, human phrasing. */
+function humanise(finding){
+  return String(finding).replace(
+    /only -([\d.]+)h rest before (\S+)/,
+    (_, h, next) => `overlaps ${next} by ${h}h`);
+}
+
 function reasonWithRules(node, reason, tone){
-  String(reason || '').split(/;\s+/).filter(Boolean).forEach(finding => {
+  String(reason || '').split(/;\s+/).filter(Boolean).map(humanise).forEach(finding => {
     const line = el('span','reason-line');
     finding.split(/(RULE-[A-Z]+-\d+|DOUBLE-BOOKED)/g).forEach(part => {
       if(!part) return;
@@ -553,19 +564,24 @@ async function showBoundary(){
   modal('The LLM / deterministic boundary', () => {
     const wrap = el('div');
     wrap.appendChild(el('p','muted',
-      'The model may only call the tools below. It never computes duty hours, ' +
-      'rest, FDP, legality or cost: those come from tested Python and arrive as ' +
-      'structured results. The panels and the prose render the same objects, ' +
-      'which is why they cannot disagree.'));
+      'The model requests a tool, Python computes, and the claim gate withholds ' +
+      'any figure no tool returned. The prompt on the left is instruction, not ' +
+      'enforcement: what actually holds is that no tool below accepts a cost or ' +
+      'a verdict as an argument, and that the gate runs on every reply.'));
     const grid = el('div','boundary-grid');
 
     const left = el('div');
-    left.appendChild(el('h4', null, 'System prompt — ' + (prompt.model || 'no model configured')));
+    left.appendChild(el('h4', null,
+      'Model instructions, not enforcement — ' + (prompt.model || 'no model configured')));
     left.appendChild(el('pre', null, prompt.system_prompt || '(no model configured)'));
     grid.appendChild(left);
 
     const right = el('div');
-    right.appendChild(el('h4', null, 'Tool surface — ' + tools.length + ' tools'));
+    right.appendChild(el('h4', null,
+      'Enforced in code: the tool surface — ' + tools.length + ' tools'));
+    right.appendChild(el('p','muted',
+      'T1 lookup · T2 consequence · T3 recommendation. A starred argument is ' +
+      'required. None of them takes a cost, a count or a verdict.'));
     const ul = el('ul','toolist');
     tools.forEach(t => {
       const req = t.parameters.required || [];
@@ -718,7 +734,7 @@ function showBriefing(){
         'A language model that is merely told not to calculate will still ' +
         'calculate, and the failure is invisible: a plausible number in a ' +
         'confident sentence. Early on, moving one steer out of a tool result ' +
-        'and into a prompt produced an invented INR 1,250,000 cancellation ' +
+        'and into a prompt produced an invented INR 12,50,000 cancellation ' +
         'cost. The fix was not a firmer instruction. It was removing the ' +
         'opportunity, then testing that it stays removed.'));
       d.appendChild(para(
@@ -738,8 +754,8 @@ function showBriefing(){
       const tb = el('tbody');
       [['38 questions through the engine', '36/36 gradable', 'python -m aircrew.scoreboard'],
        ['6 worked scenarios', '19/19 checks', 'same command'],
-       ['Agent loop and claim gate', '14/14', 'python -m tests.test_agent_loop'],
-       ['Workspace and chat pane', '60 checks', 'node tests/ui_check.js'],
+       ['Agent loop and claim gate', '15/15', 'python -m tests.test_agent_loop'],
+       ['Workspace and chat pane', '67 checks', 'node tests/ui_check.js'],
        ['38 questions through the agent', '35/36 re-scored, not re-run live', 'python -m aircrew.replay']]
         .forEach(row => {
           const tr = el('tr');
@@ -891,6 +907,17 @@ function pushPanels(nodes, label){
   paintView();
 }
 
+/* The workspace saying, in its own words, that this turn produced nothing.
+   Leaving the previous question's panel up is the one failure the product
+   promises cannot happen: the prose and the evidence would disagree. */
+function clearPanels(head, body){
+  viewStack.length = 0;
+  const p = panel('Nothing computed for this question');
+  p.appendChild(stateBlock('', head, body));
+  currentView = {nodes: [p], label: ''};
+  paintView();
+}
+
 function popPanels(){
   if(!viewStack.length) return;
   currentView = viewStack.pop();
@@ -931,9 +958,15 @@ function claimList(env){
                      () => build(env.claims.slice(0, 12))));
   return w;
 }
-function missingNote(env){
-  if(!env.missing || !env.missing.length) return null;
-  return el('div','note', 'Not established here: ' + env.missing.join('; '));
+/* What this result does not establish. Written for a controller, so anything
+   that names an internal payload path is dropped: "they are in data.exclusions"
+   sits directly above a panel titled "Why the others were ruled out", which is
+   the same information said twice, once in JSON. */
+function missingNote(env, drop){
+  const items = (env.missing || []).filter(m =>
+    !/data\.[a-z_]+/i.test(m) && !(drop || []).some(d => m.includes(d)));
+  if(!items.length) return null;
+  return el('div','note', 'Not established here: ' + items.join('; '));
 }
 
 /* --- panel builders, one per tool. The tool decides; the model does not. -- */
@@ -961,7 +994,7 @@ function pResolve(env){
   } else {
     // Deciding field first: what it costs and whether it is legal, then who.
     const tw = el('div','tw'), t = el('table');
-    t.innerHTML = '<thead><tr><th>#</th><th>Cost</th><th>Legal</th><th>Action</th>' +
+    t.innerHTML = '<thead><tr><th>#</th><th>Cost</th><th>Status</th><th>Action</th>' +
                   '<th>Base</th><th>Delay</th><th></th></tr></thead>';
     const tb = el('tbody');
     d.options.forEach(o => {
@@ -969,7 +1002,12 @@ function pResolve(env){
       if(!o.crew_id) tr.className += ' dim';
       tr.appendChild(el('td','num', o.rank));
       tr.appendChild(el('td','cost', inr(o.cost_inr)));
-      const tg = el('td'); const tag = el('span','tag ' + (o.legal ? 'legal':'illegal'), o.legal ? 'legal':'illegal');
+      // Cancellation is not a legal candidate, it is what is left when there
+      // is none. Badging it "legal" made six rows read as six legal options
+      // against a headline that correctly said five.
+      const tg = el('td');
+      const tag = !o.crew_id ? el('span','tag warn','fallback')
+                : el('span','tag ' + (o.legal ? 'legal':'illegal'), o.legal ? 'legal':'illegal');
       tg.appendChild(tag); tr.appendChild(tg);
       tr.appendChild(el('td', null, o.action));
       tr.appendChild(el('td', null, o.base || '—'));
@@ -985,12 +1023,14 @@ function pResolve(env){
     });
     t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
   }
-  const mn = missingNote(env); if(mn) p.appendChild(mn);
+  const mn = missingNote(env, d.exclusions && d.exclusions.length ? ['excluded'] : []);
+  if(mn) p.appendChild(mn);
   const cl = claimList(env); if(cl) p.appendChild(cl);
   out.push(p);
 
   if(d.exclusions && d.exclusions.length){
-    const ep = panel('Why the others were ruled out', d.exclusions.length + ' excluded');
+    const ep = panel('Why the others were ruled out — grouped by first failing rule',
+                     d.exclusions.length + ' excluded');
     const groups = {};
     d.exclusions.forEach(x => (groups[x.rule] = groups[x.rule] || []).push(x));
     // Largest group first, all shut. The shape of the rejection is the
@@ -1006,8 +1046,11 @@ function pResolve(env){
           const ul = el('ul');
           groups[rule].forEach(x => {
             const li = el('li');
-            li.appendChild(document.createTextNode(x.crew_id + ' — '));
-            reasonWithRules(li, x.reason, 'bad');
+            li.appendChild(document.createTextNode(x.crew_id + ' '));
+            // Strip the group's own rule id from each row: the heading already
+            // says it, and a wall of identical red badges stops reading as red.
+            reasonWithRules(li, String(x.reason || '')
+              .split(/;\s+/).map(f => f.replace(rule + ': ', '')).join('; '), 'bad');
             ul.appendChild(li);
           });
           return ul;
@@ -1062,9 +1105,12 @@ function pCheck(env){
   const d = env.data, out = [];
   const p = panel('Assignment check — ' + esc(d.crew_id) + ' on ' + esc(d.pairing_id));
   const head = el('div','headline');
-  const f1 = el('div','fig'); f1.appendChild(el('div','k','Breaches a rule?'));
-  f1.appendChild(el('div','v ' + (d.rules.legal ? 'good':'bad'), d.rules.legal ? 'No' : 'Yes'));
-  f1.appendChild(el('div','s', d.rules.legal ? 'all seven rules pass' : d.rules.issues.join('; ')));
+  const f1 = el('div','fig'); f1.appendChild(el('div','k','Legal?'));
+  // Green always means yes. The label was "Breaches a rule?", so a legal
+  // candidate read as a green "No" beside a green "Yes" one column over.
+  f1.appendChild(el('div','v ' + (d.rules.legal ? 'good':'bad'), d.rules.legal ? 'Yes' : 'No'));
+  f1.appendChild(el('div','s', d.rules.legal ? 'all seven rules pass'
+                                             : d.rules.issues.join('; ')));
   head.appendChild(f1);
   const f2 = el('div','fig'); f2.appendChild(el('div','k','Can we call them out?'));
   f2.appendChild(el('div','v ' + (d.callable.callable ? 'good':'bad'), d.callable.callable ? 'Yes' : 'No'));
@@ -1360,7 +1406,7 @@ function drawableSteps(r){
   return (r.tool_results || [])
     .map((env, i) => ({env, call: (r.tool_calls || [])[i]}))
     .filter(x => {
-      if(!x.call || !x.env || !x.env.data || x.env.data.error) return false;
+      if(!x.call || !x.env || !x.env.data) return false;
       // A renderer is the wrong place to lose an answer. If a payload is not
       // the shape this panel expects, drop the panel and keep the turn: the
       // prose is already grounded, and a blank workspace beats a blank page.
@@ -1379,7 +1425,7 @@ function drawableSteps(r){
    one the model answered from. */
 function mostDecisive(steps){
   return steps.reduce((best, s, i) => {
-    const rank = TOOL_TIER[s.call.name] || 0;
+    const rank = s.env.data.error ? -1 : (TOOL_TIER[s.call.name] || 0);
     return !best || rank >= best.rank ? {rank, i, s} : best;
   }, null).s;
 }
@@ -1424,7 +1470,7 @@ const STARTERS = [
    'trace_disruption', {crew_id:'C-1042', pairing_id:'P-2291'}],
   ['Why was C-5837 ruled out?',
    'check_assignment', {crew_id:'C-5837', pairing_id:'P-2291'}],
-  ['Both A320 captains are sick on 18 Sep',
+  ['Both A320 captains (VT-DXA, VT-DXB) are sick at 00:30Z on 18 Sep',
    'resolve_cover', {vacancies:[{pairing_id:'P-2205', role:'Captain', label:'assign_dxa'},
                                 {pairing_id:'P-2212', role:'Captain', label:'assign_dxb'}]}],
   ['VT-DXA is 90 minutes late on 16 Sep',
@@ -1471,14 +1517,24 @@ $('#composer').addEventListener('submit', async ev => {
     pending.remove();
     const m = say('Advisor', renderAnswer(r.reply));
     trace(m, r.tool_calls);
-    if(r.corrected) say('System', 'The first reply contained a figure no tool had computed, ' +
-      'so it was sent back for correction.', 'note');
+    // The gate firing is the product working, so say that. It is also detail a
+    // controller does not need, so it goes with the other dev-view material.
+    if(r.corrected) say('Claim gate', 'The draft cited a figure no tool had computed. ' +
+      'It was regenerated; the reply above passed.', 'note devonly');
     // Invariant 1 and 2: draw from the tool results, in the order the agent
     // committed to them -- the last result is the one it answered from.
     const steps = drawableSteps(r);
     if(steps.length){
       showSteps(steps, q, m);
       evidenceButton(steps, q, m);
+    }else{
+      // Invariant 3: never leave the previous question's evidence on screen
+      // next to this question's answer. They would disagree, and the panel is
+      // the thing a controller acts on.
+      clearPanels('No engine result for this question',
+        'This answer came from the conversation, not from a new computation. ' +
+        'The last workspace view is still reachable from its own answer.');
+      markShown(null);
     }
   }catch(e){
     pending.remove();
@@ -1511,14 +1567,9 @@ $('#input').addEventListener('keydown', e => {
   dev.addEventListener('change', applyDev);
   applyDev();
 
-  $('#clear').addEventListener('click', () => {
-    $('#log').textContent = '';
-    setPanels([(() => { const p = panel('Nothing loaded yet');
-      p.appendChild(stateBlock('', 'Pick a disruption, or describe one',
-        'The workspace fills with whatever the engine computes.')); return p; })()]);
-    markShown(null);
-    $('#input').focus();
-  });
+  // Clear puts the desk back to how it was found, openers included. Between
+  // two judges the presenter needs the starting screen, not a blank column.
+  $('#clear').addEventListener('click', () => location.reload());
   $('#panels').appendChild((() => {
     const p = panel('Nothing loaded yet');
     p.appendChild(stateBlock('', 'Pick a disruption, or describe one',

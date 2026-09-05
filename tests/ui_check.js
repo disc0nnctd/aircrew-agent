@@ -162,6 +162,31 @@ setTimeout(async () => {
   check('so the workspace shows the ranked cover',
         w.document.querySelector('#panels').textContent.includes('Ranked cover'));
 
+  // 7c. a turn that computes nothing must not leave the last one's evidence up
+  w.setPanels(w.panelsFor('resolve_cover', {}, payload), 'q1');
+  w.clearPanels('No engine result for this question', 'came from the conversation');
+  const after = w.document.querySelector('#panels').textContent;
+  check('a panel-less turn clears the workspace', !after.includes('Ranked cover'), after.slice(0, 90));
+  check('and says so rather than going blank', /No engine result/.test(after));
+  check('clearing drops the back trail', w.document.querySelector('.backbar') === null);
+
+  // 7d. exclusion wording
+  check('negative rest is shown as an overlap',
+        w.humanise('RULE-REST-04: only -6.75h rest before COVER on 2026-09-15 (rest conflict)')
+          .includes('overlaps COVER by 6.75h'),
+        w.humanise('RULE-REST-04: only -6.75h rest before COVER on 2026-09-15 (rest conflict)'));
+  check('a real rest gap is left alone',
+        w.humanise('RULE-REST-04: only 10.75h rest before P-2204 on 2026-09-17')
+          .includes('only 10.75h rest'));
+
+  w.setPanels(w.panelsFor('resolve_cover', {}, payload), 'q1');
+  const restGroup = [...w.document.querySelectorAll('#panels .panel')]
+    .find(p => /ruled out/i.test(p.querySelector('h3').textContent))
+    .querySelector('details.more');
+  const rowBadges = restGroup.querySelectorAll('li .rule-tag').length;
+  check('rows do not repeat the group rule badge', rowBadges === 0, rowBadges + ' badges on rows');
+  check('the group heading still carries it', !!restGroup.querySelector('summary .rule-tag'));
+
   // 8. the boundary and the flow
   const tools = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture_tools.json'), 'utf8'));
   const prompt = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture_prompt.json'), 'utf8'));
