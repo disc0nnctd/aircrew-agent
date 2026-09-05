@@ -6,6 +6,10 @@
 
    The fixture is genuine resolve_cover output. Regenerate it with:
      python -c "import json; from aircrew.tools import Tools,dispatch,renumber;        e=dispatch(Tools(),'resolve_cover',{'pairing_id':'P-2291','vacated_by':'C-1042'});        renumber([e]); json.dump(e,open('tests/fixture_resolve_cover.json','w'),indent=1,default=str)"
+
+   The boundary fixtures come from a running server:
+     curl -s localhost:8765/api/tools  -o tests/fixture_tools.json
+     curl -s localhost:8765/api/prompt -o tests/fixture_prompt.json
 */
 const fs = require('fs');
 const path = require('path');
@@ -25,7 +29,7 @@ const check = (name, ok, detail) => {
   if (!ok) { fails++; if (detail) console.log('        ' + String(detail).slice(0, 200)); }
 };
 
-setTimeout(() => {
+setTimeout(async () => {
   const w = window;
   const payload = JSON.parse(fs.readFileSync(
     path.join(__dirname, 'fixture_resolve_cover.json'), 'utf8'));
@@ -130,6 +134,42 @@ setTimeout(() => {
   const fold = host.querySelector('details.more');
   check('the rest is folded and counted', !!fold && /142 in total/.test(fold.textContent));
   check('the folded table is not open by default', fold && !fold.open);
+
+
+  // 8. the boundary and the flow
+  const tools = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture_tools.json'), 'utf8'));
+  const prompt = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture_prompt.json'), 'utf8'));
+  w.getJSON = async (p) => p === '/api/tools' ? tools : prompt;
+
+  await w.showBoundary();
+  const card = w.document.querySelector('.modal-card');
+  check('boundary opens a modal', !!card);
+  check('it names the model', /gpt-5.6-luna/.test(card.textContent));
+  check('it shows the whole system prompt',
+        card.querySelector('pre').textContent.length === prompt.system_prompt.length);
+  check('it lists every tool', card.querySelectorAll('.toolist li').length === tools.length,
+        card.querySelectorAll('.toolist li').length + ' listed');
+  check('required args are starred', /pairing_id\*/.test(card.textContent));
+  check('tools carry a tier', card.querySelectorAll('.toolist .tier').length === tools.length);
+  card.querySelector('header .ghost').dispatchEvent(new w.MouseEvent('click', {bubbles:true}));
+  check('close removes it', w.document.querySelector('.modal') === null);
+
+  w.showFlow();
+  const flow = w.document.querySelector('.modal-card');
+  check('flow opens a modal', !!flow);
+  const svg = flow.querySelector('svg');
+  check('the flow is one inline svg, no library', !!svg);
+  check('it has a labelled boundary', /THE MODEL DECIDES/.test(svg.textContent) &&
+        /PYTHON COMPUTES/.test(svg.textContent));
+  check('it shows the gate', /Claim gate/.test(svg.textContent));
+  check('it shows the withheld path', /withheld/.test(svg.textContent));
+  check('it names the loop bound', /up to 8 rounds/.test(svg.textContent));
+  check('every box is drawn', svg.querySelectorAll('rect').length === 8,
+        svg.querySelectorAll('rect').length + ' boxes');
+  check('the legend explains the colours', flow.querySelectorAll('.flow-legend span').length === 4);
+  // Escape closes, because a modal that traps you is worse than no modal.
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', {key:'Escape'}));
+  check('escape closes it', w.document.querySelector('.modal') === null);
 
   console.log(fails ? `\n${fails} FAILURE(S)` : '\nchat pane works');
   process.exit(fails ? 1 : 0);

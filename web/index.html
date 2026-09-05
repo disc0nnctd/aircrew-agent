@@ -71,6 +71,41 @@ header .sub{font-size:12px;color:var(--ink-faint)}
 header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:var(--mono)}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px}
 .dot.off{background:var(--ink-faint)}
+.ghost{background:none;border:1px solid var(--line);color:var(--ink-dim);
+  font:12px var(--sans);padding:3px 9px;border-radius:3px;cursor:pointer}
+.ghost:hover{color:var(--ink);border-color:var(--blue)}
+
+/* --- the boundary and the flow, both shown rather than described --------- */
+.modal{position:fixed;inset:0;z-index:200;background:rgba(6,9,13,.72);
+  display:flex;align-items:center;justify-content:center;padding:24px}
+.modal-card{background:var(--panel);border:1px solid var(--line-2);border-radius:8px;
+  width:min(1080px,100%);max-height:90vh;display:flex;flex-direction:column;
+  box-shadow:0 18px 60px rgba(0,0,0,.5)}
+.modal-card > header{display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border-bottom:1px solid var(--line)}
+.modal-card > header h3{margin:0;font-size:14px}
+.modal-card > header .ghost{margin-left:auto}
+.modal-card > .body{padding:16px;overflow:auto}
+.modal-card .muted{color:var(--ink-dim);margin:0 0 14px;font-size:13px}
+.boundary-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:820px){.boundary-grid{grid-template-columns:1fr}}
+.boundary-grid h4{margin:0 0 7px;font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-faint)}
+.boundary-grid pre{margin:0;padding:11px;background:#0b0f14;border:1px solid var(--line);
+  border-radius:4px;font:11.5px/1.5 var(--mono);color:var(--ink-dim);
+  white-space:pre-wrap;max-height:52vh;overflow:auto}
+.toolist{list-style:none;margin:0;padding:0;max-height:52vh;overflow:auto}
+.toolist li{padding:7px 0;border-bottom:1px solid var(--line)}
+.toolist li:last-child{border-bottom:none}
+.toolist code{font:12px var(--mono);color:var(--blue)}
+.toolist .desc{color:var(--ink-dim);font-size:12px;margin-top:2px}
+.toolist .tier{font:600 10px var(--mono);border:1px solid currentColor;border-radius:999px;
+  padding:0 6px;margin-left:6px}
+.tier.t1{color:var(--ink-faint)}.tier.t2{color:var(--blue)}.tier.t3{color:var(--green)}
+.flow-wrap{overflow:auto}
+.flow-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font-size:12px;color:var(--ink-dim)}
+.flow-legend span{display:flex;align-items:center;gap:6px}
+.flow-legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
 
 /* --- chat ---------------------------------------------------------------- */
 .chat{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel);min-height:0}
@@ -270,6 +305,10 @@ pre.draft{margin:0;padding:12px;font-family:var(--mono);font-size:12.5px;white-s
     <header>
       <h1>Crew Ops Advisor</h1>
       <span class="sub">DX network</span>
+      <button id="boundary" class="ghost" type="button"
+              title="Show the system prompt and the tool surface">boundary</button>
+      <button id="flow" class="ghost" type="button"
+              title="Show how one question becomes an answer">flow</button>
       <span class="status" id="status"><span class="dot off"></span>checking…</span>
     </header>
     <div class="log" id="log" aria-live="polite"></div>
@@ -322,6 +361,12 @@ async function api(path, body){
   return j;
 }
 const runTool = (name, args) => api('/api/tool', {name, arguments: args || {}});
+
+async function getJSON(path){
+  const r = await fetch(path);
+  if(!r.ok) throw new Error('GET ' + path + ' failed: ' + r.status);
+  return r.json();
+}
 
 /* --- rule ids, in both forms -------------------------------------------
 
@@ -403,6 +448,160 @@ function more(headline, count, build, opts){
   d.appendChild(s);
   d.appendChild(build());
   return d;
+}
+
+/* --- the boundary, shown rather than described ---------------------------
+
+   The claim the whole product rests on is that the model never computes a
+   figure. That is not something a controller should have to take on trust,
+   so both halves are on screen: the entire system prompt the model is
+   working under, and every tool it is allowed to call. Both are fetched
+   live from the running server, so they cannot drift from what is actually running. */
+const TOOL_TIER = {
+  lookup: 1, crew_profile: 1, earliest_next_report: 1,
+  trace_disruption: 2, check_assignment: 2, duty_timeline: 2,
+  simulate_disruption: 2, validate: 2,
+  resolve_cover: 3, draft_notification: 3,
+};
+
+function modal(title, build){
+  const overlay = el('div','modal');
+  overlay.addEventListener('click', e => { if(e.target === overlay) close(); });
+  const card = el('div','modal-card');
+  const head = el('header');
+  head.appendChild(el('h3', null, title));
+  const x = el('button','ghost','close');
+  x.type = 'button';
+  head.appendChild(x);
+  card.appendChild(head);
+  const body = el('div','body');
+  body.appendChild(build());
+  card.appendChild(body);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  function close(){ overlay.remove(); document.removeEventListener('keydown', esc); }
+  function esc(e){ if(e.key === 'Escape') close(); }
+  x.addEventListener('click', close);
+  document.addEventListener('keydown', esc);
+  x.focus();
+  return overlay;
+}
+
+async function showBoundary(){
+  const [prompt, tools] = await Promise.all([
+    getJSON('/api/prompt'), getJSON('/api/tools')
+  ]);
+  modal('The LLM / deterministic boundary', () => {
+    const wrap = el('div');
+    wrap.appendChild(el('p','muted',
+      'The model may only call the tools below. It never computes duty hours, ' +
+      'rest, FDP, legality or cost: those come from tested Python and arrive as ' +
+      'structured results. The panels and the prose render the same objects, ' +
+      'which is why they cannot disagree.'));
+    const grid = el('div','boundary-grid');
+
+    const left = el('div');
+    left.appendChild(el('h4', null, 'System prompt — ' + (prompt.model || 'no model configured')));
+    left.appendChild(el('pre', null, prompt.system_prompt || '(no model configured)'));
+    grid.appendChild(left);
+
+    const right = el('div');
+    right.appendChild(el('h4', null, 'Tool surface — ' + tools.length + ' tools'));
+    const ul = el('ul','toolist');
+    tools.forEach(t => {
+      const req = t.parameters.required || [];
+      const args = Object.keys(t.parameters.properties || {})
+        .map(k => req.includes(k) ? k + '*' : k).join(', ');
+      const li = el('li');
+      li.appendChild(el('code', null, t.name + '(' + args + ')'));
+      const tier = TOOL_TIER[t.name];
+      if(tier) li.appendChild(el('span','tier t' + tier, 'T' + tier));
+      li.appendChild(el('div','desc', String(t.description || '').split('. ')[0] + '.'));
+      ul.appendChild(li);
+    });
+    right.appendChild(ul);
+    grid.appendChild(right);
+
+    wrap.appendChild(grid);
+    return wrap;
+  });
+}
+
+/* --- the same boundary, as one picture ---------------------------------- */
+function showFlow(){
+  const BOX = (x, y, w, h, title, sub, tone) => `
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6"
+          fill="var(--flow-${tone}-bg)" stroke="var(--flow-${tone})"/>
+    <text x="${x + 14}" y="${y + 22}" class="t">${title}</text>
+    ${sub ? `<text x="${x + 14}" y="${y + 40}" class="s">${sub}</text>` : ''}`;
+
+  modal('One question, end to end', () => {
+    const wrap = el('div');
+    wrap.appendChild(el('p','muted',
+      'Everything on the left is a choice the model makes. Everything on the ' +
+      'right is arithmetic it cannot reach. A figure crosses back only as part ' +
+      'of a computed result, and the gate checks that it did.'));
+
+    const box = el('div','flow-wrap');
+    box.innerHTML = `
+<svg viewBox="0 0 900 540" width="100%" style="min-width:760px" role="img"
+     aria-label="How a controller question becomes a grounded answer">
+  <style>
+    svg { --flow-model:#4c9aff; --flow-model-bg:#111d2b;
+          --flow-engine:#3fb950; --flow-engine-bg:#0f1f16;
+          --flow-gate:#f0b429;  --flow-gate-bg:#241d0c;
+          --flow-out:#a371f7;   --flow-out-bg:#1b1428; }
+    .t { fill:#e6ebf2; font:600 13px system-ui,sans-serif }
+    .s { fill:#9aa7b8; font:11.5px system-ui,sans-serif }
+    .lbl { fill:#6b7889; font:11px ui-monospace,monospace }
+    .hd { fill:#9aa7b8; font:600 11px system-ui,sans-serif; letter-spacing:.08em }
+    .ln { stroke:#4c9aff; stroke-width:1.5; fill:none; marker-end:url(#a) }
+    .ln.back { stroke:#6b7889; stroke-dasharray:4 3 }
+    .ln.bad { stroke:#f85149 }
+    .ln.good { stroke:#3fb950 }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"
+            markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker>
+  </defs>
+
+  <line x1="450" y1="30" x2="450" y2="520" stroke="#333c4a" stroke-dasharray="6 5"/>
+  <text x="225" y="22" class="hd" text-anchor="middle">THE MODEL DECIDES</text>
+  <text x="675" y="22" class="hd" text-anchor="middle">PYTHON COMPUTES</text>
+
+  ${BOX(40, 40, 370, 46, 'Controller question', '&#8220;C-1042 is sick for P-2291&#8221;', 'model')}
+  ${BOX(40, 130, 370, 62, 'Model picks a tool and its arguments', 'the one genuinely open choice', 'model')}
+  ${BOX(490, 130, 370, 62, 'dispatch &#8594; engine', 'rules, costing, ranking, search', 'engine')}
+  ${BOX(490, 230, 370, 72, 'Result: summary, data, claims', 'every figure computed here, with an id', 'engine')}
+  ${BOX(40, 340, 370, 62, 'Model writes the answer', 'citing {{claim:c3}}, never a number of its own', 'model')}
+  ${BOX(490, 340, 370, 62, 'Claim gate', 'is every figure in this turn&#8217;s results?', 'gate')}
+  ${BOX(490, 440, 370, 56, 'Not grounded: one corrective turn', 'still ungrounded &#8594; the answer is withheld', 'gate')}
+  ${BOX(40, 440, 370, 56, 'Answer + workspace panels', 'both rendered from the same result', 'out')}
+
+  <path class="ln" d="M225,86 L225,130"/>
+  <path class="ln" d="M410,161 L490,161"/>
+  <path class="ln" d="M675,192 L675,230"/>
+  <path class="ln back" d="M490,266 C440,266 460,180 415,168"/>
+  <text x="430" y="300" class="lbl" text-anchor="middle">up to 8 rounds</text>
+  <path class="ln" d="M225,192 L225,340"/>
+  <path class="ln" d="M410,371 L490,371"/>
+  <path class="ln good" d="M490,392 C460,410 300,410 225,430"/>
+  <text x="300" y="424" class="lbl">grounded</text>
+  <path class="ln bad" d="M675,402 L675,440"/>
+</svg>`;
+    wrap.appendChild(box);
+
+    const legend = el('div','flow-legend');
+    [['#4c9aff','the model chooses'], ['#3fb950','Python computes'],
+     ['#f0b429','the gate checks'], ['#a371f7','what the controller sees']]
+      .forEach(([c, t]) => {
+        const s = el('span'); const i = el('i'); i.style.background = c;
+        s.appendChild(i); s.appendChild(document.createTextNode(t)); legend.appendChild(s);
+      });
+    wrap.appendChild(legend);
+    return wrap;
+  });
 }
 
 /* --- chat log ----------------------------------------------------------- */
@@ -1083,6 +1282,9 @@ $('#input').addEventListener('keydown', e => {
 /* --- boot --------------------------------------------------------------- */
 (async () => {
   buildStarters();
+  $('#boundary').addEventListener('click', () => showBoundary().catch(e =>
+    modal('The boundary', () => stateBlock('err','Could not load it', e.message))));
+  $('#flow').addEventListener('click', showFlow);
   $('#panels').appendChild((() => {
     const p = panel('Nothing loaded yet');
     p.appendChild(stateBlock('', 'Pick a disruption, or describe one',

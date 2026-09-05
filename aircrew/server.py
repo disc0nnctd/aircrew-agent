@@ -86,6 +86,28 @@ class Handler(BaseHTTPRequestHandler):
                     "model_error": _agent_error,
                 }
             )
+        # The boundary, served rather than described. Both of these are the
+        # real objects the loop uses, not a copy written for the screen: if
+        # the tool surface changes, this changes with it.
+        if path == "/api/tools":
+            from .tools import SCHEMAS
+
+            return self._json(SCHEMAS)
+        if path == "/api/prompt":
+            from .agent import DEFAULT_MODEL, SYSTEM_PROMPT
+
+            dates = _tools.ds.schedule_dates
+            return self._json(
+                {
+                    "model": DEFAULT_MODEL if get_agent() else None,
+                    "system_prompt": SYSTEM_PROMPT.format(
+                        schedule_from=dates[0],
+                        schedule_to=dates[-1],
+                        snapshot=_tools.ds.snapshot_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        year=dates[0][:4],
+                    ),
+                }
+            )
         return self._json({"error": "not found"}, 404)
 
     # ------------------------------------------------------------------
