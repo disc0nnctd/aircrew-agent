@@ -35,26 +35,38 @@ _ids = itertools.count(1)
 @dataclass
 class Claim:
     """One validated statement. `text` is what may be rendered; `value` is the
-    machine-readable version; `basis` names the code and records behind it."""
+    machine-readable version; `basis` names the code and records behind it.
+
+    `short` is the same fact with its label stripped: "DX412, DX413, DX588"
+    beside "3 flights uncovered on day 1: DX412, DX413, DX588". A claim has to
+    stand up alone, so `text` says what the figure is; but the model writes its
+    own lead-in, and substituting the full sentence into "breaks three flights
+    on day one: ..." says everything twice. Both forms are the engine's words,
+    so choosing between them cannot introduce a figure the engine did not
+    produce.
+    """
 
     id: str
     kind: str  # "number" | "verdict" | "legality" | "list"
     text: str
     value: Any
     basis: list[str] = field(default_factory=list)
+    short: str | None = None
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "kind": self.kind,
             "text": self.text,
+            "short": self.short or self.text,
             "value": self.value,
             "basis": self.basis,
         }
 
 
-def claim(kind: str, text: str, value: Any, basis: list[str] | None = None) -> Claim:
-    return Claim(f"c{next(_ids)}", kind, text, value, basis or [])
+def claim(kind: str, text: str, value: Any, basis: list[str] | None = None,
+          short: str | None = None) -> Claim:
+    return Claim(f"c{next(_ids)}", kind, text, value, basis or [], short)
 
 
 def renumber(results: list[dict]) -> list[dict]:
@@ -304,14 +316,16 @@ class Tools:
             return envelope(d["error"], d)
         cl = [
             claim("list", f"{len(d['day1'])} flights uncovered on day 1: " + ", ".join(d["day1"]),
-                  d["day1"], ["rosters.json"]),
+                  d["day1"], ["rosters.json"], short=", ".join(d["day1"])),
             claim("number", f"{d['passengers_day1']} passengers on day 1",
-                  d["passengers_day1"], ["flights.json seats"]),
+                  d["passengers_day1"], ["flights.json seats"],
+                  short=str(d["passengers_day1"])),
         ]
         if d["day2_also_at_risk"]:
             cl.append(
                 claim("list", f"{len(d['day2_also_at_risk'])} further flights at risk on day 2: "
-                      + ", ".join(d["day2_also_at_risk"]), d["day2_also_at_risk"], ["rosters.json"])
+                      + ", ".join(d["day2_also_at_risk"]), d["day2_also_at_risk"],
+                      ["rosters.json"], short=", ".join(d["day2_also_at_risk"]))
             )
         return envelope(
             f"{d['role_on_pairing']} {crew_id} off {d['pairing_id']}. "
@@ -566,14 +580,16 @@ class Tools:
         rec = d["recommended"]
         cl = [
             claim("number", f"{d['legal_candidate_count']} candidates are legal",
-                  d["legal_candidate_count"], ALL_RULES),
+                  d["legal_candidate_count"], ALL_RULES,
+                  short=str(d["legal_candidate_count"])),
             claim("number", f"{d['excluded_count']} candidates are excluded "
                   f"({d['exclusions_orientation']})", d["excluded_count"], ALL_RULES),
         ]
         if rec:
             cl.append(
                 claim("verdict", f"the cheapest legal option is {rec['action']} at {inr(rec['cost_inr'])}",
-                      rec, ALL_RULES + ["costs.json"])
+                      rec, ALL_RULES + ["costs.json"],
+                      short=f"{rec['action']} at {inr(rec['cost_inr'])}")
             )
             # How many share the winning price. Without this the model counts
             # the rows itself and gets it slightly wrong -- "three other
@@ -591,7 +607,8 @@ class Tools:
                 )
         for o in d["options"]:
             cl.append(
-                claim("number", f"{o['action']} costs {inr(o['cost_inr'])}", o["cost_inr"], ["costs.json"])
+                claim("number", f"{o['action']} costs {inr(o['cost_inr'])}", o["cost_inr"],
+                      ["costs.json"], short=inr(o["cost_inr"]))
             )
         return envelope(
             f"{d['legal_candidate_count']} legal candidates, {d['excluded_count']} excluded "

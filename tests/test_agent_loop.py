@@ -83,6 +83,30 @@ def test_rule_limits_are_not_flagged():
     assert g.ok
 
 
+def test_a_tool_name_never_reaches_the_controller():
+    """The `missing` field says "call resolve_cover", which is the right steer
+    for the model and the wrong words for a crew controller: it reads as a
+    debug log leaking into an operational answer. The steer stays technical,
+    the reply has to be plain."""
+    t = Tools()
+    env = dispatch(t, "trace_disruption", {"crew_id": "C-1042", "pairing_id": "P-2291"})
+    renumber([env])
+
+    leaked = grounding.check(
+        "Three flights are uncovered. Call resolve_cover for prices.", [env])
+    assert not leaked.ok
+    assert leaked.leaked_tool_names == ["resolve_cover"]
+
+    plain = grounding.check(
+        "Three flights are uncovered on day 1: {{claim:c1}}. I have not priced "
+        "the options yet. Shall I rank them?", [env])
+    assert plain.ok
+    assert "resolve_cover" not in plain.rendered
+
+    # ordinary English that merely contains a tool-ish word is untouched
+    assert grounding.check("The lookups are done.", [env]).ok
+
+
 def test_a_date_is_not_treated_as_a_figure():
     """Found by an A/B on the live model: it wrote "three flights on 15 Sep and
     three on 16 Sep", which is entirely true, and the gate failed it for the
@@ -176,10 +200,17 @@ def test_a_single_brace_placeholder_is_still_substituted():
     env = dispatch(t, "resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"})
     renumber([env])
     for form in ("{{claim:c1}}", "{claim:c1}", "{{ claim: c1 }}"):
-        g = grounding.check(f"There are {form}.", [env])
+        # mid-sentence, so the bare figure is substituted: the model already
+        # wrote the label ("There are ...")
+        g = grounding.check(f"There are {form} legal candidates.", [env])
         assert g.ok, form
-        assert "5 candidates are legal" in g.rendered, form
+        assert "There are 5 legal candidates." == g.rendered, (form, g.rendered)
         assert "claim:" not in g.rendered, form
+
+        # standing alone, the claim supplies its own label
+        g = grounding.check(f"{form}", [env])
+        assert g.ok, form
+        assert g.rendered == "5 candidates are legal", (form, g.rendered)
 
     # an id this turn does not have is never printed as a token
     bad = grounding.check("Assign {claim:c99}.", [env])
@@ -231,8 +262,9 @@ def test_loop_sends_one_corrective_turn_and_recovers():
             _Msg(tool_calls=[_Call("trace_disruption",
                                    {"crew_id": "C-1042", "pairing_id": "P-2291"})]),
             _Msg(content="Three flights uncovered; cancelling costs INR 1,250,000."),
+            # plain words: naming the tool would now fail its own check
             _Msg(content="Three flights are uncovered on day 1. I do not have a "
-                         "cancellation cost -- that needs resolve_cover."),
+                         "cancellation cost yet. Shall I price the options?"),
         ],
         Tools(),
     )

@@ -89,6 +89,24 @@ tool results, and a figure that is not there stops your reply from being sent.
 If you do not have a figure, say so and call the tool. Never estimate, never \
 carry a number over from an earlier answer, and never round one for readability.
 
+A placeholder mid-sentence is replaced with the bare figure, so write the label \
+yourself and let the placeholder supply the value:
+
+    good:  Three flights are uncovered on day 1: {{claim:c1}}.
+    bad:   Three flights are uncovered on day 1: 3 flights uncovered on day 1: DX412 ...
+
+HOW TO WRITE IT
+
+You are talking to a crew controller, not to a developer. Never name a tool, a \
+function, a field or a claim id in your reply: they mean nothing to the person \
+reading and they make a plain answer look like a debug log. Say "I have not \
+priced the options yet", not "call resolve_cover".
+
+When a result establishes the impact but not the plan, end with one short offer \
+of the obvious next step, phrased as a question: "Shall I rank the cover options \
+and price them?" If the controller agrees, run it immediately in that next turn \
+without asking again.
+
 WHAT YOU ADD
 
 The engine cannot resolve ambiguity, and that is your job:
@@ -202,6 +220,16 @@ class Agent:
         # Drop nulls before the message goes back into the history: some
         # gateways reject a replayed `"content": null` alongside tool_calls.
         return {k: v for k, v in msg.items() if v is not None}
+
+    # ------------------------------------------------------------------
+    def reset(self) -> None:
+        """Forget the conversation, keep the system prompt.
+
+        History is what makes "C-3310 is also sick, now what?" work without a
+        pairing id, so it is never trimmed mid-conversation. It does have to be
+        droppable on request, or "start again" is a lie.
+        """
+        del self.messages[1:]
 
     # ------------------------------------------------------------------
     def ask(self, question: str) -> Turn:

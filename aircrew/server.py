@@ -131,6 +131,16 @@ class Handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 return self._json({"error": "tool raised"}, 500)
 
+        if self.path == "/api/reset":
+            # The browser's Clear reloads the page, which empties the log the
+            # controller sees. The agent's own history lived on, so the next
+            # question still carried the last one -- fine for a follow-up,
+            # wrong for "start again" and wrong between two judges at a demo.
+            agent = get_agent()
+            if agent is not None:
+                agent.reset()
+            return self._json({"ok": True})
+
         if self.path == "/api/chat":
             agent = get_agent()
             if agent is None:

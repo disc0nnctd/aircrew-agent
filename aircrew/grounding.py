@@ -73,6 +73,23 @@ DATE_NUM_RE = re.compile(
     re.I,
 )
 
+# The controller does not know what a tool is called. "call resolve_cover" in a
+# reply reads as a debug log leaking into an operational answer, and the names
+# come straight from the `missing` field, which the model is right to be
+# reading. So the steer stays technical and the reply has to be plain.
+TOOL_NAMES = (
+    "lookup", "crew_profile", "trace_disruption", "check_assignment",
+    "duty_timeline", "simulate_disruption", "resolve_cover",
+    "earliest_next_report", "draft_notification", "validate",
+)
+TOOL_NAME_RE = re.compile(r"\b(" + "|".join(TOOL_NAMES) + r")\b")
+
+
+def tool_names_in(reply: str) -> list[str]:
+    """Tool names the controller should never have been shown."""
+    return sorted({m.group(1) for m in TOOL_NAME_RE.finditer(reply)})
+
+
 # Figures that are part of the vocabulary rather than a computed result.
 ALWAYS_OK = {
     "0", "1", "2", "3", "4", "5", "6", "7",       # small counts, rule ordinals
@@ -178,6 +195,7 @@ class Grounding:
     claims_used: list[str]
     mislabelled_figures: list[dict] = field(default_factory=list)
     spelled_figures: list[str] = field(default_factory=list)
+    leaked_tool_names: list[str] = field(default_factory=list)
 
     def corrective_prompt(self) -> str:
         bits = []
@@ -185,6 +203,12 @@ class Grounding:
             bits.append(
                 "these figures are not in any tool result from this turn: "
                 + ", ".join(self.ungrounded_numbers)
+            )
+        if self.leaked_tool_names:
+            bits.append(
+                "you named " + ", ".join(self.leaked_tool_names)
+                + " in the reply; the controller does not know what those are, "
+                "so say what you have and have not established in plain words"
             )
         if self.spelled_figures:
             bits.append(
@@ -307,6 +331,40 @@ def _fit(text: str, before: str) -> str:
     return text
 
 
+def _pick(claim: dict, before: str, after: str = "") -> str:
+    """The full sentence, or just the figure, depending on where it lands.
+
+    The model writes its own lead-in. "C-1042's absence breaks three flights on
+    day one: {{claim:c1}}" with the full claim substituted reads "...on day
+    one: 3 flights uncovered on day 1: DX412, DX413, DX588" -- the same fact
+    announced twice, once by the model and once by the engine. After a colon,
+    a dash, or a lead-in the model has already finished, the bare figure is
+    what belongs there.
+
+    Both forms come from the engine, so this only chooses how much of the
+    engine's own wording to use. It can never introduce a figure.
+    """
+    text = claim.get("text", "")
+    short = claim.get("short") or text
+    tail = (before or "").rstrip()
+    head = (after or "").lstrip()
+
+    # Standing alone as its own sentence, the claim has to say what it is:
+    # nothing around it supplies the label.
+    starts_sentence = not tail or tail.endswith((".", "!", "?", "\n"))
+    ends_sentence = not head or head[0] in ".!?\n" or head[:1].isupper()
+    if starts_sentence and ends_sentence:
+        return text
+
+    # Otherwise the model is building a sentence around it and has supplied the
+    # label itself, so the bare figure is what belongs in the gap.
+    if short != text:
+        return short
+
+    # No short form: drop whatever the model has already said, if anything.
+    return _fit(text, before)
+
+
 def check(reply: str, tool_results: list[dict]) -> Grounding:
     claims, figures = collect(tool_results)
 
@@ -318,7 +376,7 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
         c = claims.get(cid)
         if not c:
             return f"[unknown claim {cid}]"
-        return _fit(c["text"], reply[: m.start()])
+        return _pick(c, reply[: m.start()], reply[m.end():])
 
     rendered = CLAIM_RE.sub(sub, reply)
 
@@ -348,13 +406,15 @@ def check(reply: str, tool_results: list[dict]) -> Grounding:
     # A magnitude word is a number written as prose, and the digit checks
     # above cannot see it.
     spelled = sorted({m.group(0).lower() for m in MAGNITUDE_RE.finditer(typed)})
+    leaked = tool_names_in(rendered)
     return Grounding(
         ok=(not ungrounded and not unbacked and not unknown_claim
-            and not wrong_label and not spelled),
+            and not wrong_label and not spelled and not leaked),
         ungrounded_numbers=sorted(set(ungrounded)),
         unbacked_verdicts=unbacked,
         rendered=rendered,
         claims_used=used,
         mislabelled_figures=wrong_label,
         spelled_figures=spelled,
+        leaked_tool_names=leaked,
     )
