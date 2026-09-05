@@ -24,14 +24,17 @@
   --bg:#0e1116;          /* near-black, not pure: pure black smears on OLED */
   --panel:#161b22;       /* one step up, so panels separate without borders */
   --panel-2:#1c232c;     /* nested surfaces (table headers, chips) */
-  --line:#2b3441;
-  --ink:#e8edf4;         /* 14.8:1 on --bg */
-  --ink-dim:#9aa8ba;     /* 6.4:1 on --bg, still AA for body text */
+  --line:#262d38;
+  --line-2:#333c4a;      /* a border that has to be seen, not just felt */
+  --ink:#e6ebf2;         /* 14.4:1 on --bg */
+  --ink-dim:#9aa7b8;     /* 6.3:1 on --bg, still AA for body text */
   --ink-faint:#6b7889;   /* 3.6:1 -- labels only, never body text */
   --accent:#f0b429;      /* the decisive figure. 9.9:1 on --bg */
-  --blue:#5aa9f7;        /* computed, legal, safe. 7.4:1 on --bg */
-  --red:#ff6b6b;         /* a rule that stops you. 6.1:1 on --bg */
-  --green:#5ad19a;       /* legal. 9.2:1 on --bg */
+  --blue:#4c9aff;        /* computed, and the colour of a rule id */
+  --red:#f85149;         /* a rule that stops you */
+  --green:#3fb950;       /* legal */
+  --warn:#d29922;        /* legal, but it costs you something */
+  --cover:#a371f7;       /* the proposed cover, distinct from both verdicts */
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 }
@@ -72,15 +75,20 @@ header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:
 /* --- chat ---------------------------------------------------------------- */
 .chat{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--panel);min-height:0}
 .log{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px;min-height:0}
+/* The controller's own words sit in a bubble; the advisor's answer does not.
+   Reason: boxing the answer makes it look like a quotation from somewhere
+   else, when it is the main content of the pane. */
 .msg{max-width:100%}
-.msg .who{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:4px}
-.msg.you .body{background:var(--panel-2);border-left:2px solid var(--blue)}
-.msg .body{padding:9px 11px;border-radius:4px;background:#12171e;border-left:2px solid var(--line);white-space:pre-wrap}
-.msg.note .body{border-left-color:var(--accent);color:var(--ink-dim);font-size:13px}
-.msg.err .body{border-left-color:var(--red);color:var(--red)}
-.trace{margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
-.trace span{display:inline-block;background:var(--panel-2);border:1px solid var(--line);
-  border-radius:3px;padding:1px 5px;margin:2px 4px 0 0}
+.msg .who{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:5px}
+.msg .body{white-space:pre-wrap}
+.msg.you .body{background:var(--panel-2);border:1px solid var(--line-2);
+  padding:9px 12px;border-radius:8px}
+.msg.note .body{color:var(--ink-dim);font-size:13px;border-left:2px solid var(--line);padding-left:9px}
+.msg.err .body{color:var(--red);border-left:2px solid var(--red);padding-left:9px}
+.trace{margin-top:10px;font-size:12px;color:var(--ink-faint);
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.trace span{font-family:var(--mono);font-size:11px;background:var(--panel-2);
+  border:1px solid var(--line);padding:1px 6px;border-radius:999px;color:var(--ink-dim)}
 
 /* An answer is written prose, so it is rendered as prose. The model emits
    light markdown; pre-wrap printed the asterisks. */
@@ -91,20 +99,57 @@ header .status{margin-left:auto;font-size:12px;color:var(--ink-dim);font-family:
 .msg .body.md em{color:var(--ink-dim);font-style:italic}
 .msg .body.md code{font-family:var(--mono);font-size:12px;background:var(--panel-2);
   border:1px solid var(--line);border-radius:3px;padding:0 4px}
-.msg .body.md h4{margin:9px 0 5px;font-size:11px;letter-spacing:.07em;
-  text-transform:uppercase;color:var(--ink-faint)}
+.msg .body.md h4{margin:14px 0 4px;font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--blue)}
 .msg .body.md h4:first-child{margin-top:0}
-.msg .body.md ul{margin:0 0 7px;padding-left:17px}
+.msg .body.md ul{margin:0 0 8px;padding-left:18px}
 .msg .body.md li{margin:2px 0}
 
 /* Which turn the workspace belongs to. Without it you scroll the chat and
    lose track of what the right-hand pane is showing. */
-.msg.showing .body{border-left-color:var(--accent)}
-.evidence-btn{margin-top:7px;background:none;border:1px solid var(--line);
-  color:var(--ink-dim);font:inherit;font-size:12px;cursor:pointer;
-  border-radius:3px;padding:3px 9px}
-.evidence-btn:hover{border-color:var(--accent);color:var(--ink)}
-.msg.showing .evidence-btn{border-color:var(--accent);color:var(--accent)}
+.msg.showing .body{border-left:2px solid var(--accent);padding-left:9px}
+.msg.showing.you .body{padding-left:12px}
+.evidence-btn{margin-left:auto;padding:2px 9px;font:inherit;font-size:11px;
+  color:var(--ink-dim);background:var(--panel-2);
+  border:1px solid var(--line-2);border-radius:999px;cursor:pointer}
+.evidence-btn:hover{color:var(--ink);border-color:var(--accent)}
+.msg.showing .evidence-btn{color:var(--accent);border-color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 10%,transparent)}
+
+/* A rule id is precise and, at 6 a.m., opaque. The tag carries the id so it
+   can be quoted, and the tooltip carries the sentence so it can be
+   understood. Both, always -- never one instead of the other. */
+.rule-tag{display:inline-flex;align-items:center;margin:0 3px;padding:1px 5px;
+  border:1px solid color-mix(in srgb,var(--blue) 65%,var(--line));
+  border-radius:4px;background:color-mix(in srgb,var(--blue) 7%,var(--bg));
+  color:var(--blue);font:600 10.5px/1.35 var(--mono);white-space:nowrap;cursor:help}
+.rule-tag:first-child{margin-left:0}
+.rule-tag.bad{border-color:color-mix(in srgb,var(--red) 65%,var(--line));
+  background:color-mix(in srgb,var(--red) 7%,var(--bg));color:var(--red)}
+.rule-tag.warn{border-color:color-mix(in srgb,var(--warn) 65%,var(--line));
+  background:color-mix(in srgb,var(--warn) 7%,var(--bg));color:var(--warn)}
+.rule-tag.ok{border-color:color-mix(in srgb,var(--green) 55%,var(--line));
+  background:color-mix(in srgb,var(--green) 6%,var(--bg));color:var(--green)}
+.rule-tooltip{position:fixed;z-index:100;width:max-content;
+  max-width:min(300px,calc(100vw - 16px));padding:6px 8px;
+  border:1px solid var(--line-2);border-radius:4px;
+  background:var(--ink);color:var(--bg);box-shadow:0 5px 18px rgba(0,0,0,.24);
+  font-size:11.5px;line-height:1.4;pointer-events:none}
+.reason-line{display:block}
+
+/* Detail on demand. A panel states its finding; the rows behind it open when
+   the controller wants to challenge it, and stay shut when they do not. */
+details.more{border-top:1px solid var(--line)}
+details.more:first-child{border-top:none}
+details.more > summary{padding:7px 12px;background:#12171e;font-size:12px;
+  cursor:pointer;display:flex;gap:8px;align-items:baseline;list-style:none}
+details.more > summary::-webkit-details-marker{display:none}
+details.more > summary::before{content:'▸';color:var(--ink-faint);font-size:10px}
+details.more[open] > summary::before{content:'▾'}
+details.more > summary b{font-weight:650}
+details.more > summary .why{color:var(--ink-dim)}
+details.more > summary:hover{background:#161c25}
+details.more > summary .count{margin-left:auto;color:var(--ink-faint);font-family:var(--mono);font-size:11px}
 
 /* A drill-down replaces the workspace, so there has to be a way back. */
 .backbar{display:flex;align-items:center;gap:9px;margin-bottom:10px}
@@ -202,13 +247,9 @@ tr.dim td{color:var(--ink-dim)}
 
 /* exclusions: visible and grouped, not collapsed at the bottom. They are what a
    controller most wants to challenge. */
-.excl-group{border-top:1px solid var(--line)}
-.excl-group:first-child{border-top:none}
-.excl-group > .h{padding:7px 12px;background:#12171e;font-size:12px;display:flex;gap:8px;align-items:baseline}
-.excl-group > .h b{font-weight:650}
-.excl-group > .h .why{color:var(--ink-dim)}
-.excl-group ul{margin:0;padding:6px 12px 10px 28px;font-size:12px;color:var(--ink-dim)}
-.excl-group li{margin:3px 0;font-family:var(--mono);font-size:11.5px}
+details.more ul{margin:0;padding:6px 12px 10px 28px;font-size:12px;color:var(--ink-dim)}
+details.more li{margin:3px 0;font-family:var(--mono);font-size:11.5px}
+details.more li .reason-line{font-family:var(--sans);font-size:12px}
 
 /* states are designed, not afterthoughts */
 .state{padding:26px 18px;text-align:center;color:var(--ink-dim)}
@@ -281,6 +322,88 @@ async function api(path, body){
   return j;
 }
 const runTool = (name, args) => api('/api/tool', {name, arguments: args || {}});
+
+/* --- rule ids, in both forms -------------------------------------------
+
+   A controller knows the rules, but a rule id is still an opaque token on a
+   screen at 6 a.m. The tag shows the id, so it can be quoted into a phone
+   call; the tooltip shows the sentence, so it can be understood. The gloss
+   is deliberately shorter than rules.json's own text, because a tooltip that
+   needs reading twice is a tooltip nobody reads. */
+const RULE_GLOSS = {
+  'RULE-FDP-01':  'max duty period 13h, less 30 min per sector beyond the 2nd',
+  'RULE-DUTY-02': 'max 60 duty hours in any 7 days',
+  'RULE-FLT-03':  'max 100 flight hours in any 28 days',
+  'RULE-REST-04': 'min 12h rest between duties',
+  'RULE-QUAL-05': 'must be rated for the aircraft type',
+  'RULE-CERT-06': 'all certifications valid on the duty date',
+  'RULE-BASE-07': 'callout from own base, else deadhead positioning',
+  'DOUBLE-BOOKED':'already flying at that time',
+};
+const gloss = r => RULE_GLOSS[r] || '';
+
+function hideRuleTooltip(){ const t = $('#rule-tooltip'); if(t) t.remove(); }
+
+function showRuleTooltip(tag){
+  const text = tag.dataset.tooltip; if(!text) return;
+  hideRuleTooltip();
+  const tip = el('div','rule-tooltip', text);
+  tip.id = 'rule-tooltip';
+  tip.setAttribute('role','tooltip');
+  document.body.appendChild(tip);
+  // Keep it on screen: below the tag if it fits, above if it does not.
+  const a = tag.getBoundingClientRect(), b = tip.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(a.left, window.innerWidth - b.width - 8)) + 'px';
+  tip.style.top = (a.bottom + 7 + b.height <= window.innerHeight - 8
+    ? a.bottom + 7 : Math.max(8, a.top - b.height - 7)) + 'px';
+}
+
+function ruleTag(rule, tone){
+  const tag = el('span','rule-tag' + (tone ? ' ' + tone : ''), rule);
+  const text = gloss(rule);
+  if(!text) return tag;
+  tag.dataset.tooltip = text;
+  tag.tabIndex = 0;
+  tag.setAttribute('aria-label', rule + ': ' + text);
+  tag.addEventListener('mouseenter', () => showRuleTooltip(tag));
+  tag.addEventListener('mouseleave', hideRuleTooltip);
+  tag.addEventListener('focus', () => showRuleTooltip(tag));
+  tag.addEventListener('blur', hideRuleTooltip);
+  return tag;
+}
+
+/* A reason reads "C-2087 — RULE-DUTY-02: 61.33h exceeds 60h". Split on the
+   rule ids so each becomes a tag with its gloss, and the numbers around it
+   stay plain text. Multiple findings are joined with "; " by the engine and
+   are put on their own lines here, because two reasons in one line read as
+   one reason. */
+function reasonWithRules(node, reason, tone){
+  String(reason || '').split(/;\s+/).filter(Boolean).forEach(finding => {
+    const line = el('span','reason-line');
+    finding.split(/(RULE-[A-Z]+-\d+|DOUBLE-BOOKED)/g).forEach(part => {
+      if(!part) return;
+      if(gloss(part)) line.appendChild(ruleTag(part, tone || 'bad'));
+      else line.appendChild(document.createTextNode(part));
+    });
+    node.appendChild(line);
+  });
+  return node;
+}
+
+/* Detail on demand: a <details> that is shut by default and says how much it
+   is hiding, so nothing is concealed, only folded. */
+function more(headline, count, build, opts){
+  const d = el('details','more');
+  if(opts && opts.open) d.open = true;
+  const s = el('summary');
+  if(headline instanceof Node) s.appendChild(headline);
+  else s.appendChild(el('b', null, headline));
+  if(opts && opts.why) s.appendChild(el('span','why', opts.why));
+  if(count) s.appendChild(el('span','count', count));
+  d.appendChild(s);
+  d.appendChild(build());
+  return d;
+}
 
 /* --- chat log ----------------------------------------------------------- */
 
@@ -400,16 +523,29 @@ function stateBlock(kind, head, body){
   s.appendChild(el('p', null, body));
   return s;
 }
+/* What this result licenses the model to say. Two or three is orientation;
+   nine is a wall, and it is audit material rather than a finding, so past
+   three it folds. */
 function claimList(env){
   if(!env.claims || !env.claims.length) return null;
+  const build = (from) => {
+    const ul = el('ul');
+    from.forEach(c => {
+      const li = el('li'); li.appendChild(el('code', null, c.id));
+      reasonWithRules(li, ' ' + c.text, 'ok');
+      ul.appendChild(li);
+    });
+    return ul;
+  };
   const w = el('div','claims');
-  w.appendChild(el('div','k','Established by this result'));
-  const ul = el('ul');
-  env.claims.slice(0, 8).forEach(c => {
-    const li = el('li'); const code = el('code', null, c.id);
-    li.appendChild(code); li.appendChild(document.createTextNode(c.text)); ul.appendChild(li);
-  });
-  w.appendChild(ul); return w;
+  if(env.claims.length <= 3){
+    w.appendChild(el('div','k','Established by this result'));
+    w.appendChild(build(env.claims));
+    return w;
+  }
+  w.appendChild(more('Established by this result', env.claims.length + ' claims',
+                     () => build(env.claims.slice(0, 12))));
+  return w;
 }
 function missingNote(env){
   if(!env.missing || !env.missing.length) return null;
@@ -473,15 +609,24 @@ function pResolve(env){
     const ep = panel('Why the others were ruled out', d.exclusions.length + ' excluded');
     const groups = {};
     d.exclusions.forEach(x => (groups[x.rule] = groups[x.rule] || []).push(x));
-    Object.keys(groups).sort((a,b) => groups[b].length - groups[a].length).forEach(rule => {
-      const g = el('div','excl-group'), h = el('div','h');
-      h.appendChild(el('b', null, groups[rule].length + ' × ' + rule));
-      h.appendChild(el('span','why', groups[rule][0].rule_text || ''));
-      g.appendChild(h);
-      const ul = el('ul');
-      groups[rule].forEach(x => ul.appendChild(el('li', null, x.crew_id + ' — ' + x.reason)));
-      g.appendChild(ul); ep.appendChild(g);
-    });
+    // Largest group first, and only that one open: the shape of the rejection
+    // is the finding, and 19 names at once is not a finding.
+    Object.keys(groups).sort((a,b) => groups[b].length - groups[a].length)
+      .forEach((rule, i) => {
+        const head = el('span');
+        head.appendChild(el('b', null, groups[rule].length + ' × '));
+        head.appendChild(ruleTag(rule, 'bad'));
+        ep.appendChild(more(head, groups[rule].length + ' crew', () => {
+          const ul = el('ul');
+          groups[rule].forEach(x => {
+            const li = el('li');
+            li.appendChild(document.createTextNode(x.crew_id + ' — '));
+            reasonWithRules(li, x.reason, 'bad');
+            ul.appendChild(li);
+          });
+          return ul;
+        }, {open: i === 0, why: groups[rule][0].rule_text || gloss(rule)}));
+      });
     out.push(ep);
   }
   return out;
@@ -702,18 +847,37 @@ function pTable(env, title){
   cols.forEach(c => htr.appendChild(el('th', null, c.replace(/_/g,' '))));
   thead.appendChild(htr); t.appendChild(thead);
   const tb = el('tbody');
-  rows.slice(0, 120).forEach(r => {
+  const rowNode = r => {
     const tr = el('tr');
     cols.forEach(c => {
       const v = r[c];
-      const td = el('td', typeof v === 'number' ? 'num' : null,
-                    Array.isArray(v) ? v.join(', ') : esc(v));
-      tr.appendChild(td);
+      tr.appendChild(el('td', typeof v === 'number' ? 'num' : null,
+                        Array.isArray(v) ? v.join(', ') : esc(v)));
     });
-    tb.appendChild(tr);
-  });
+    return tr;
+  };
+  // 142 crew is a scroll, not an answer. Show enough to see the shape of the
+  // result, and fold the rest behind a count that says what is being held back.
+  const HEAD = 8, CAP = 120;
+  rows.slice(0, HEAD).forEach(r => tb.appendChild(rowNode(r)));
   t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);
-  if(rows.length > 120) p.appendChild(el('div','note','Showing the first 120 of ' + rows.length + ' rows.'));
+
+  if(rows.length > HEAD){
+    const shown = Math.min(rows.length, CAP);
+    p.appendChild(more('The other ' + (shown - HEAD) + ' rows', rows.length + ' in total', () => {
+      const tw2 = el('div','tw'), t2 = el('table');
+      const th2 = el('thead'), htr2 = el('tr');
+      cols.forEach(c => htr2.appendChild(el('th', null, c.replace(/_/g,' '))));
+      th2.appendChild(htr2); t2.appendChild(th2);
+      const tb2 = el('tbody');
+      rows.slice(HEAD, CAP).forEach(r => tb2.appendChild(rowNode(r)));
+      t2.appendChild(tb2); tw2.appendChild(t2);
+      if(rows.length > CAP) tw2.appendChild(el('div','note',
+        'Showing the first ' + CAP + ' of ' + rows.length + ' rows. Narrow the ' +
+        'filters to see the rest.'));
+      return tw2;
+    }));
+  }
   const cl = claimList(env); if(cl) p.appendChild(cl);
   return [p];
 }
@@ -821,11 +985,15 @@ function showSteps(steps, label, node){
 
 function evidenceButton(steps, label, node){
   if(!steps.length) return null;
-  const b = el('button', 'evidence-btn', 'Show workspace');
+  const b = el('button', 'evidence-btn', 'Show in workspace');
   b.type = 'button';
   b.title = 'Re-open the workspace view for this answer';
   b.addEventListener('click', () => showSteps(steps, label, node));
-  node.appendChild(b);
+  // Sits in the tool-chip row, pushed right: it belongs to the same idea as
+  // the chips, which is what this answer was built from.
+  let row = node.querySelector('.trace');
+  if(!row){ row = el('div','trace'); node.appendChild(row); }
+  row.appendChild(b);
   return b;
 }
 

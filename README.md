@@ -22,6 +22,7 @@ is enforced by a gate, not by a line in a prompt. See
 ```bash
 python -m aircrew.scoreboard          # the engine number, no model required
 python -m tests.test_agent_loop       # the gate and the loop
+node tests/ui_check.js                # the workspace and chat pane (needs jsdom)
 ```
 
 ## Setup
