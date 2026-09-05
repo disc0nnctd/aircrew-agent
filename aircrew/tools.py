@@ -106,6 +106,20 @@ def inr(n: int | float) -> str:
     return f"INR {int(round(n)):,}"
 
 
+def nos(flight_ids) -> str:
+    """"DX412-2026-09-15" is a key, not a flight number.
+
+    The date is already in the sentence, and three of these in a row is a wall
+    of characters a controller has to parse to find three numbers.
+    """
+    return ", ".join(str(f).split("-")[0] for f in flight_ids)
+
+
+def plural(n: int, word: str) -> str:
+    """"1 flights match" reads like a bug, and the model copies it verbatim."""
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
 class Tools:
     """Every tool takes what a controller would actually say -- a pairing id, or
     the crew member who dropped out, or a tail plus a date. None of them takes a
@@ -167,8 +181,17 @@ class Tools:
             return bad
         if entity == "flights":
             d = q.flights(on_date, dep, arr, flight_no, aircraft, longest_block)
-            cl = [claim("number", f"{d['count']} flights match", d["count"], ["flights.json"],
-                    short=str(d["count"]))]
+            cl = [claim("number", plural(d["count"], "flight") + " matched", d["count"], ["flights.json"],
+                    short=plural(d["count"], "flight"))]
+            if d["count"] == 1 and d.get("flights"):
+                f0 = d["flights"][0]
+                cl.append(claim("number",
+                                f"{f0['flight_no']} on {f0['date']} is "
+                                f"{'an' if f0['aircraft_type'][:1] in 'AEIOU' else 'a'} "
+                                f"{f0['aircraft_type']} "
+                                f"({f0['aircraft']}) with {f0['seats']} seats",
+                                f0["seats"], ["flights.json"],
+                                short=f"{f0['seats']} seats"))
             if d.get("most_seats_at_risk"):
                 m = d["most_seats_at_risk"]
                 cl.append(
@@ -178,6 +201,7 @@ class Tools:
                         f"against {m['vs']}",
                         m,
                         ["flights.json seats"],
+                        short=m["flights"],
                     )
                 )
             if longest_block and "longest_block" in d:
@@ -189,6 +213,7 @@ class Tools:
                         + ", ".join(lb["flights"]),
                         lb,
                         ["flights.json"],
+                        short=f"{lb['block_hours']}h",
                     )
                 )
             return envelope(
@@ -215,7 +240,7 @@ class Tools:
                 f"{d['count']} crew match. {note}.",
                 d,
                 [claim("number", f"{d['count']} crew match", d["count"], ["crew.json"],
-                       short=str(d["count"]))],
+                       short=f"{d['count']} crew")],
                 [] if on_date else ["duty hours and headroom need on_date"],
             )
 
@@ -228,8 +253,8 @@ class Tools:
                 + (f" at {base}" if base else "")
                 + ". On-call window is eligibility to be called, not legality.",
                 d,
-                [claim("number", f"{d['count']} reserves on call", d["count"],
-                       ["reserve_pool.json"], short=str(d["count"]))],
+                [claim("number", plural(d["count"], "reserve") + " on call", d["count"],
+                       ["reserve_pool.json"], short=plural(d["count"], "reserve"))],
                 ["being on call does not mean the assignment is legal; use check_assignment"],
             )
 
@@ -240,8 +265,8 @@ class Tools:
             return envelope(
                 f"{d['count']} certifications expire within {d['within_days']} days of {on_date}.",
                 d,
-                [claim("number", f"{d['count']} certifications expiring", d["count"],
-                       ["certifications.json"], short=str(d["count"]))],
+                [claim("number", plural(d["count"], "certification") + " expiring", d["count"],
+                       ["certifications.json"], short=plural(d["count"], "certification"))],
                 ["validity is tested against valid_to only"],
             )
 
@@ -299,13 +324,16 @@ class Tools:
             d,
             [
                 claim("number", f"{crew_id} has {d['duty_hours_7d']}h duty in 7d to {d['as_of']}",
-                      d["duty_hours_7d"], ["RULE-DUTY-02", "duty_clocks.json", "rosters.json"]),
+                      d["duty_hours_7d"], ["RULE-DUTY-02", "duty_clocks.json", "rosters.json"],
+                      short=f"{d['duty_hours_7d']}h"),
                 claim("number", f"{crew_id} has {d['duty_headroom_7d']}h headroom under RULE-DUTY-02",
-                      d["duty_headroom_7d"], ["RULE-DUTY-02"]),
+                      d["duty_headroom_7d"], ["RULE-DUTY-02"],
+                      short=f"{d['duty_headroom_7d']}h"),
                 claim("number", f"{crew_id} has {d['flight_hours_28d']}h block in 28d to {d['as_of']}",
-                      d["flight_hours_28d"], ["RULE-FLT-03"]),
+                      d["flight_hours_28d"], ["RULE-FLT-03"],
+                      short=f"{d['flight_hours_28d']}h"),
                 claim("list", f"{crew_id} is rated on {', '.join(d['ratings'])}",
-                      d["ratings"], ["crew.json"]),
+                      d["ratings"], ["crew.json"], short=", ".join(d["ratings"])),
             ],
             ["headroom is not a verdict; a specific assignment needs check_assignment"],
         )
@@ -320,8 +348,8 @@ class Tools:
         if "error" in d:
             return envelope(d["error"], d)
         cl = [
-            claim("list", f"{len(d['day1'])} flights uncovered on day 1: " + ", ".join(d["day1"]),
-                  d["day1"], ["rosters.json"], short=", ".join(d["day1"])),
+            claim("list", f"{len(d['day1'])} flights uncovered on day 1: " + nos(d["day1"]),
+                  d["day1"], ["rosters.json"], short=nos(d["day1"])),
             claim("number", f"{d['passengers_day1']} passengers on day 1",
                   d["passengers_day1"], ["flights.json seats"],
                   short=str(d["passengers_day1"])),
@@ -329,8 +357,8 @@ class Tools:
         if d["day2_also_at_risk"]:
             cl.append(
                 claim("list", f"{len(d['day2_also_at_risk'])} further flights at risk on day 2: "
-                      + ", ".join(d["day2_also_at_risk"]), d["day2_also_at_risk"],
-                      ["rosters.json"], short=", ".join(d["day2_also_at_risk"]))
+                      + nos(d["day2_also_at_risk"]), d["day2_also_at_risk"],
+                      ["rosters.json"], short=nos(d["day2_also_at_risk"]))
             )
         return envelope(
             f"{d['role_on_pairing']} {crew_id} off {d['pairing_id']}. "
@@ -377,6 +405,8 @@ class Tools:
                 + ("legal under all seven rules" if legal else "illegal: " + "; ".join(d["rules"]["issues"])),
                 {"legal": legal, "issues": d["rules"]["issues"]},
                 ALL_RULES,
+                short=("legal under all seven rules" if legal
+                       else "illegal: " + "; ".join(d["rules"]["issues"])),
             ),
             claim(
                 "verdict",
@@ -384,6 +414,8 @@ class Tools:
                 + ("can be called out" if callable_ else f"cannot be called out: {d['callable']['reason']}"),
                 {"callable": callable_, "reason": d["callable"]["reason"]},
                 ["reserve_pool.json", "RULE-BASE-07"],
+                short=("can be called out" if callable_
+                       else f"cannot be called out: {d['callable']['reason']}"),
             ),
         ]
         return envelope(
@@ -418,7 +450,8 @@ class Tools:
             d,
             [
                 claim("legality", f"{crew_id}'s week with the proposed cover is "
-                      + ("legal" if d["legal"] else "illegal"), d["legal"], ALL_RULES)
+                      + ("legal" if d["legal"] else "illegal"), d["legal"], ALL_RULES,
+                      short=("legal" if d["legal"] else "illegal"))
             ]
             if pairing_id
             else [],
@@ -460,15 +493,17 @@ class Tools:
             cl = [
                 claim("number", f"FDP after the delay is {d['fdp_after_delay']}h against a "
                       f"{d['fdp_limit']}h limit for {d['sectors']} sectors",
-                      {"fdp": d["fdp_after_delay"], "limit": d["fdp_limit"]}, ["RULE-FDP-01"]),
+                      {"fdp": d["fdp_after_delay"], "limit": d["fdp_limit"]}, ["RULE-FDP-01"],
+                      short=f"{d['fdp_after_delay']}h"),
                 claim("legality", "the rostered crew "
                       + ("BREACH RULE-FDP-01" if d["breach"] else "stay inside RULE-FDP-01"),
-                      d["breach"], ["RULE-FDP-01"]),
+                      d["breach"], ["RULE-FDP-01"],
+                      short=("breach RULE-FDP-01" if d["breach"] else "stay inside RULE-FDP-01")),
             ]
             for o in d.get("options", []):
                 cl.append(
                     claim("number", f"{o['action']} costs {inr(o['cost_inr'])}",
-                          o["cost_inr"], ["costs.json"])
+                          o["cost_inr"], ["costs.json"], short=inr(o["cost_inr"]))
                 )
             return envelope(
                 f"{mode} delay of {delay_hours}h. "
@@ -494,10 +529,11 @@ class Tools:
                 d,
                 [
                     claim("list", f"{len(d['affected_flight_ids'])} flights affected: "
-                          + ", ".join(d["affected_flight_ids"]), d["affected_flight_ids"],
-                          ["flights.json"]),
+                          + nos(d["affected_flight_ids"]), d["affected_flight_ids"],
+                          ["flights.json"], short=nos(d["affected_flight_ids"])),
                     claim("number", f"{d['passengers_at_risk']} passengers on affected flights",
-                          d["passengers_at_risk"], ["flights.json seats"]),
+                          d["passengers_at_risk"], ["flights.json seats"],
+                          short=str(d["passengers_at_risk"])),
                 ],
                 ["arrivals count as well as departures; the window is half-open"],
             )
@@ -514,9 +550,10 @@ class Tools:
                 d,
                 [
                     claim("number", f"cancelling {d['leg_count']} legs costs {inr(d['cost_inr'])}",
-                          d["cost_inr"], ["costs.json cancellation_per_flight"]),
+                          d["cost_inr"], ["costs.json cancellation_per_flight"],
+                          short=inr(d["cost_inr"])),
                     claim("number", f"{d['passengers']} passengers affected", d["passengers"],
-                          ["flights.json seats"]),
+                          ["flights.json seats"], short=str(d["passengers"])),
                 ],
             )
 
@@ -558,7 +595,8 @@ class Tools:
                 a = d[key]
                 cl.append(
                     claim("verdict", f"{v['pairing_id']}: {a['action']} at {inr(a['cost_inr'])}",
-                          a, ALL_RULES + ["costs.json"])
+                          a, ALL_RULES + ["costs.json"],
+                          short=f"{a['action']} at {inr(a['cost_inr'])}")
                 )
             tie = ""
             if d["tie_count"] > 1:
@@ -612,7 +650,7 @@ class Tools:
                     claim("number",
                           f"{len(tied)} legal options tie at {inr(rec['cost_inr'])}, "
                           f"so cost does not separate them",
-                          len(tied), ["costs.json"])
+                          len(tied), ["costs.json"], short=str(len(tied)))
                 )
         for o in d["options"]:
             cl.append(
@@ -657,6 +695,7 @@ class Tools:
                     f"earliest next report is {d['earliest_report_utc']}",
                     d["earliest_report_utc"],
                     ["RULE-REST-04"],
+                    short=d["earliest_report_utc"],
                 )
             ],
             ["this is the rest minimum alone; a specific duty still needs check_assignment"],
@@ -703,7 +742,9 @@ class Tools:
                 [claim("legality",
                        f"{kw['crew_id']} covering {kw['pairing_id']} is "
                        + ("legal" if legal else "illegal: " + "; ".join(r["data"]["rules"]["issues"])),
-                       legal, ALL_RULES)],
+                       legal, ALL_RULES,
+                       short=("legal" if legal
+                              else "illegal: " + "; ".join(r["data"]["rules"]["issues"])))],
             )
 
         if claim_kind == "crew_qualified":
@@ -716,7 +757,8 @@ class Tools:
                 [claim("verdict",
                        f"{kw['crew_id']} is "
                        + ("rated" if ok else "not rated")
-                       + f" on {kw['aircraft_type']}", ok, ["RULE-QUAL-05", "crew.json"])],
+                       + f" on {kw['aircraft_type']}", ok, ["RULE-QUAL-05", "crew.json"],
+                       short=("rated" if ok else "not rated") + f" on {kw['aircraft_type']}")],
             )
 
         if claim_kind == "cheapest_option":
@@ -734,7 +776,8 @@ class Tools:
                 {"claim": kw, "verdict": ok, "actual_cheapest": rec},
                 [claim("verdict",
                        f"the cheapest legal cover for {kw['pairing_id']} is {rec['action']}"
-                       if rec else "there is no legal cover", rec, ALL_RULES + ["costs.json"])],
+                       if rec else "there is no legal cover", rec, ALL_RULES + ["costs.json"],
+                       short=(rec["action"] if rec else "no legal cover"))],
             )
 
         return envelope(

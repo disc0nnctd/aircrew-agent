@@ -69,10 +69,15 @@ class Query:
             # and the panel cannot word the same fact three different ways.
             top = max(by_type.items(), key=lambda kv: kv[1])
             rest = sorted((k, v) for k, v in by_type.items() if k != top[0])
-            out["most_seats_at_risk"] = {
-                "flights": f"any {top[0]} leg ({top[1]} seats)",
-                "vs": ", ".join(f"{k} legs ({v} seats)" for k, v in rest),
-            }
+            # Only a comparison. With one fleet type in the result there is
+            # nothing to compare it against, and the claim came out as
+            # "the most seats at risk is any A320 leg (162 seats), against " --
+            # which the model then wrote into an answer.
+            if rest:
+                out["most_seats_at_risk"] = {
+                    "flights": f"any {top[0]} leg ({top[1]} seats)",
+                    "vs": ", ".join(f"{k} legs ({v} seats)" for k, v in rest),
+                }
 
         if longest_block and rows:
             mx = max(f["block_hours"] for f in rows)
