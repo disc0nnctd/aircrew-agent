@@ -55,7 +55,11 @@ def expected_figures(expected) -> set[str]:
 
 
 def result_blob(tool_results: list[dict]) -> tuple[str, set[str]]:
-    blob = json.dumps(tool_results, default=str)
+    # ensure_ascii=False matters: the answer keys contain an em dash and an en
+    # dash, and the default escaping turns those into \u2014 / \u2013 so the
+    # expected string can never be found. That silently failed two questions
+    # the agent had actually answered correctly.
+    blob = json.dumps(tool_results, default=str, ensure_ascii=False)
     _, figures = collect(tool_results)
     return blob, figures
 
@@ -87,9 +91,15 @@ def main(argv=None):
         return 2
 
     from .agent import Agent
+    from .scoreboard import GEN, Scoreboard
 
     ds = load()
     tools = Tools(ds)
+    # The scoreboard already knows which keys are rubrics rather than values.
+    # Scoring a rubric by string match can only ever fail, so those are marked
+    # GEN here too and kept out of the denominator -- the same rule as the
+    # engine number: never count a rubric, in either direction.
+    rubric = {r["id"] for r in Scoreboard(ds.dir).run() if r["state"] == GEN}
     rows = []
     print(f"{'ID':<5} {'T':<2} {'ROUTE':<6} {'GROUND':<7} {'CORRECT':<8} PROMPT")
     print("-" * 88)
@@ -105,6 +115,7 @@ def main(argv=None):
             continue
         routed = bool(turn.tool_calls)
         grounded = bool(turn.grounding and turn.grounding.ok)
+        is_gen = q["question_id"] in rubric
         correct, missing = score(q["expected_answer"], turn.tool_results)
         rows.append(
             {
@@ -113,32 +124,39 @@ def main(argv=None):
                 "prompt": q["prompt"],
                 "reply": turn.reply,
                 "tools": [c["name"] for c in turn.tool_calls],
+                "calls": turn.tool_calls,
+                "ungrounded": (turn.grounding.ungrounded_numbers if turn.grounding else []),
                 "routed": routed,
                 "grounded": grounded,
                 "corrected": turn.corrected,
-                "correct": correct,
-                "missing_figures": missing[:10],
+                "correct": None if is_gen else correct,
+                "gen": is_gen,
+                "missing_figures": [] if is_gen else missing[:10],
+                "tool_results": turn.tool_results,
             }
         )
         print(
             f"{q['question_id']:<5} {q['tier']:<2} "
             f"{('yes' if routed else 'NO'):<6} "
             f"{('yes' if grounded else 'NO'):<7} "
-            f"{('yes' if correct else 'NO'):<8} {q['prompt'][:44]}"
+            f"{('GEN' if is_gen else ('yes' if correct else 'NO')):<8} {q['prompt'][:44]}"
         )
 
     n = len(rows)
+    gen = sum(1 for r in rows if r.get("gen"))
+    gradable = n - gen
     ok = sum(1 for r in rows if r.get("correct"))
     gr = sum(1 for r in rows if r.get("grounded"))
     rt = sum(1 for r in rows if r.get("routed"))
     co = sum(1 for r in rows if r.get("corrected"))
     print("-" * 88)
-    print(f"AGENT: {ok}/{n} reached the answer; {rt}/{n} routed to a tool; "
-          f"{gr}/{n} fully grounded; {co} needed one correction")
+    print(f"AGENT: {ok}/{gradable} reached the answer; {rt}/{n} routed to a tool; "
+          f"{gr}/{n} fully grounded; {co} needed one correction; "
+          f"{gen} GEN not counted")
     if a.out:
         open(a.out, "w").write(json.dumps(rows, indent=2, default=str))
         print(f"transcript -> {a.out}")
-    return 0 if ok == n else 1
+    return 0 if ok == gradable else 1
 
 
 if __name__ == "__main__":

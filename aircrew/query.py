@@ -57,6 +57,23 @@ class Query:
                 ordered.append(f["flight_no"])
         out["flight_numbers"] = ordered
 
+        if rows:
+            by_type: dict[str, int] = {}
+            for f in rows:
+                by_type[f["aircraft_type"]] = max(
+                    by_type.get(f["aircraft_type"], 0), f["seats"]
+                )
+            out["seats_by_type"] = by_type
+            out["most_seats_on_one_leg"] = max(by_type.values())
+            # One place formats this, so the tool claim, the scoreboard entry
+            # and the panel cannot word the same fact three different ways.
+            top = max(by_type.items(), key=lambda kv: kv[1])
+            rest = sorted((k, v) for k, v in by_type.items() if k != top[0])
+            out["most_seats_at_risk"] = {
+                "flights": f"any {top[0]} leg ({top[1]} seats)",
+                "vs": ", ".join(f"{k} legs ({v} seats)" for k, v in rest),
+            }
+
         if longest_block and rows:
             mx = max(f["block_hours"] for f in rows)
             out["longest_block"] = {

@@ -19,7 +19,7 @@ import os
 from dataclasses import dataclass, field
 
 from . import grounding
-from .tools import OPENAI_TOOLS, Tools, dispatch
+from .tools import OPENAI_TOOLS, Tools, dispatch, renumber
 
 DEFAULT_MODEL = os.environ.get("AIRCREW_MODEL", "gpt-5.6-luna")
 DEFAULT_BASE_URL = os.environ.get("AIRCREW_BASE_URL", "https://api.openai.com/v1")
@@ -27,6 +27,14 @@ DEFAULT_BASE_URL = os.environ.get("AIRCREW_BASE_URL", "https://api.openai.com/v1
 SYSTEM_PROMPT = """\
 You are the Crew Ops Advisor for an airline crew-control desk. The controller \
 is working under time pressure and will act on what you say.
+
+THE OPERATING WINDOW
+
+The schedule covers {schedule_from} to {schedule_to}, and the duty snapshot is \
+{snapshot}. A controller who says "17 Sep" means {year}-09-17. Never supply a \
+different year, and never ask which year they meant -- there is only one. If a \
+date is genuinely outside the window the tool will tell you so rather than \
+returning an empty result.
 
 WHAT YOU DO AND WHAT THE ENGINE DOES
 
@@ -101,7 +109,14 @@ class Agent:
         self.model = model
         self.tools = tools or Tools()
         self.max_rounds = max_rounds
-        self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        dates = self.tools.ds.schedule_dates
+        prompt = SYSTEM_PROMPT.format(
+            schedule_from=dates[0],
+            schedule_to=dates[-1],
+            snapshot=self.tools.ds.snapshot_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            year=dates[0][:4],
+        )
+        self.messages: list[dict] = [{"role": "system", "content": prompt}]
         self._client = None
         self._base_url = base_url
         self._api_key = api_key or os.environ.get("AIRCREW_API_KEY") or os.environ.get(
@@ -152,11 +167,12 @@ class Agent:
                 result = dispatch(self.tools, name, args)
                 calls.append({"name": name, "arguments": args})
                 results.append(result)
+                renumber(results)
                 self.messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(result, default=str),
+                        "content": json.dumps(result, default=str, ensure_ascii=False),
                     }
                 )
 
@@ -192,8 +208,10 @@ class Agent:
                 result = dispatch(self.tools, name, args)
                 calls.append({"name": name, "arguments": args})
                 results.append(result)
+                renumber(results)
                 self.messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, default=str)}
+                    {"role": "tool", "tool_call_id": tc.id,
+                     "content": json.dumps(result, default=str, ensure_ascii=False)}
                 )
             resp = self.client.chat.completions.create(
                 model=self.model, messages=self.messages, tools=OPENAI_TOOLS, tool_choice="none"

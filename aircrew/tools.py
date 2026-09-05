@@ -1,7 +1,7 @@
 """The tool surface, and the claim envelope that makes an unvalidated figure
 structurally hard to state.
 
-Nine tools, each named after the thing a controller asks for. Every one of them
+Ten tools, each named after the thing a controller asks for. Every one of them
 returns the same envelope:
 
     {summary, claims, missing, data}
@@ -57,6 +57,25 @@ def claim(kind: str, text: str, value: Any, basis: list[str] | None = None) -> C
     return Claim(f"c{next(_ids)}", kind, text, value, basis or [])
 
 
+def renumber(results: list[dict]) -> list[dict]:
+    """Renumber every claim in a turn to c1, c2, c3 ... in place.
+
+    Ids are minted from a process-global counter, so by the twentieth question
+    of a replay they read c200+ while the system prompt's example says
+    {{claim:c7}} -- and the model copies the example. That referenced an id
+    that did not exist in the turn, the gate rejected the reply as citing an
+    unknown claim, and the turn cost a needless correction round. It fired on
+    13 of 38 questions before this existed. Per-turn numbering makes the ids
+    small, predictable, and impossible to collide with the prompt.
+    """
+    n = 0
+    for r in results:
+        for c in r.get("claims", []):
+            n += 1
+            c["id"] = f"c{n}"
+    return results
+
+
 def envelope(
     summary: str,
     data: dict,
@@ -86,6 +105,22 @@ class Tools:
         self.e = Engine(self.ds)
         self.q = Query(self.ds)
 
+    def _bad_date(self, on_date: str | None) -> dict | None:
+        """A date outside the schedule returns nothing, and nothing looks like
+        an answer: "0 flights affected" is what a wrong year produces. Say so
+        instead, and name the window."""
+        if not on_date or self.ds.date_in_schedule(on_date):
+            return None
+        dates = self.ds.schedule_dates
+        return envelope(
+            f"{on_date} is outside the schedule, which runs {dates[0]} to "
+            f"{dates[-1]}. No result was computed -- check the year.",
+            {"error": "date outside schedule", "requested": on_date,
+             "schedule_from": dates[0], "schedule_to": dates[-1]},
+            [],
+            ["this is not an empty result; nothing was computed"],
+        )
+
     # ==================================================================
     # 1. lookup -- every Tier-1 question, one entity at a time
     # ==================================================================
@@ -107,9 +142,23 @@ class Tools:
         longest_block: bool = False,
     ) -> dict:
         q = self.q
+        bad = self._bad_date(on_date)
+        if bad and entity in ("flights", "reserves", "pairings"):
+            return bad
         if entity == "flights":
             d = q.flights(on_date, dep, arr, flight_no, aircraft, longest_block)
             cl = [claim("number", f"{d['count']} flights match", d["count"], ["flights.json"])]
+            if d.get("most_seats_at_risk"):
+                m = d["most_seats_at_risk"]
+                cl.append(
+                    claim(
+                        "number",
+                        f"the most seats at risk on one leg is {m['flights']}, "
+                        f"against {m['vs']}",
+                        m,
+                        ["flights.json seats"],
+                    )
+                )
             if longest_block and "longest_block" in d:
                 lb = d["longest_block"]
                 cl.append(
@@ -129,6 +178,10 @@ class Tools:
             )
 
         if entity == "crew":
+            if crew_id:
+                # "What is C-2210's base and rating?" is a profile question
+                # however the model phrased the route to it.
+                return self.crew_profile(crew_id, on_date)
             d = q.crew(rank, base, rating, on_date, min_duty_hours_7d)
             if "error" in d:
                 return envelope(d["error"], d)
@@ -268,7 +321,17 @@ class Tools:
         if "error" in d:
             return envelope(d["error"], d)
         legal, callable_ = d["rules"]["legal"], d["callable"]["callable"]
-        cl = [
+        cl = []
+        if d.get("positioning"):
+            cl.append(
+                claim(
+                    "verdict",
+                    d["positioning"]["consequence"],
+                    d["positioning"],
+                    ["RULE-BASE-07", "flights.json", "costs.json"],
+                )
+            )
+        cl += [
             claim(
                 "legality",
                 f"{crew_id} on {pairing_id} is "
@@ -342,6 +405,9 @@ class Tools:
         """`mode` is required for a delay and has no default that hides the
         choice: a technical delay holds report and grows the duty; positioning
         shifts both edges and leaves FDP unchanged."""
+        bad = self._bad_date(on_date)
+        if bad:
+            return bad
         if kind == "delay":
             if not (aircraft and on_date and delay_hours is not None):
                 return envelope("delay needs aircraft, on_date and delay_hours", {"error": "missing arguments"})
@@ -500,6 +566,40 @@ class Tools:
             d,
             cl,
             ["excluded candidates carry the rule that stopped them; they are in data.exclusions"],
+        )
+
+    # ==================================================================
+    # earliest_next_report
+    # ==================================================================
+    def earliest_next_report(self, release_utc: str) -> dict:
+        """When may someone report again after being released?
+
+        Collapsing the tool surface from seventeen to nine dropped this one,
+        and the measured replay caught it: Q23 asks exactly this and the model
+        had nothing to call, so it asked the controller for a clarification it
+        did not need. Added back on evidence.
+        """
+        try:
+            d = self.e.earliest_next_report(release_utc)
+        except ValueError:
+            return envelope(
+                f"Could not read '{release_utc}' as a UTC time. "
+                "Use YYYY-MM-DDTHH:MM:SSZ.",
+                {"error": "bad timestamp"},
+            )
+        return envelope(
+            f"Released {d['released_utc']}, earliest next report "
+            f"{d['earliest_report_utc']} after {d['min_rest_hours']}h rest.",
+            d,
+            [
+                claim(
+                    "number",
+                    f"earliest next report is {d['earliest_report_utc']}",
+                    d["earliest_report_utc"],
+                    ["RULE-REST-04"],
+                )
+            ],
+            ["this is the rest minimum alone; a specific duty still needs check_assignment"],
         )
 
     # ==================================================================
@@ -747,6 +847,20 @@ SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "earliest_next_report",
+        "description": (
+            "Given a release time, the earliest a crew member may report for "
+            "their next duty under the minimum-rest rule."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "release_utc": _s("string", "YYYY-MM-DDTHH:MM:SSZ, when they were released"),
+            },
+            "required": ["release_utc"],
+        },
+    },
+    {
         "name": "draft_notification",
         "description": "Draft the callout message to a crew member, from roster records.",
         "parameters": {
@@ -787,6 +901,28 @@ SCHEMAS: list[dict] = [
 OPENAI_TOOLS = [{"type": "function", "function": s} for s in SCHEMAS]
 
 
+#: Values that mean "not supplied". Some models fill in every property of a
+#: schema rather than only the ones they mean, so a call arrives with
+#: on_date="" and within_days=0 alongside the one argument that matters. Taking
+#: those literally produced the worst routing failures we measured: an empty
+#: on_date tripped the "needs a date" error and the model asked the controller
+#: for a date it already had.
+_EMPTY = ("", None, [], {})
+
+
+def clean_args(args: dict) -> dict:
+    """Drop parameters the model filled in but did not mean."""
+    out = {}
+    for k, v in (args or {}).items():
+        if v in _EMPTY:
+            continue
+        # 0 is never a meaningful threshold or window for these two
+        if k in ("min_duty_hours_7d", "within_days") and not v:
+            continue
+        out[k] = v
+    return out
+
+
 def dispatch(tools: Tools, name: str, args: dict) -> dict:
     fn: Callable | None = {
         "lookup": tools.lookup,
@@ -796,12 +932,13 @@ def dispatch(tools: Tools, name: str, args: dict) -> dict:
         "duty_timeline": tools.duty_timeline,
         "simulate_disruption": tools.simulate_disruption,
         "resolve_cover": tools.resolve_cover,
+        "earliest_next_report": tools.earliest_next_report,
         "draft_notification": tools.draft_notification,
         "validate": tools.validate,
     }.get(name)
     if fn is None:
         return envelope(f"No such tool '{name}'.", {"error": "unknown tool"})
     try:
-        return fn(**args)
+        return fn(**clean_args(args))
     except TypeError as exc:
         return envelope(f"Bad arguments for {name}: {exc}", {"error": str(exc)})

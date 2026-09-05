@@ -395,7 +395,41 @@ the clearest thing this branch is missing.
 
 ---
 
-## 9. If there were another day
+## 9. What running it through the model actually taught
+
+The engine number said nothing about this. Every one of these was invisible
+until the 38 questions went through `gpt-5.6-luna`, and every one was a defect
+in this codebase rather than in the model:
+
+- **A model may fill in every property of a schema**, not only the ones it
+  means. Calls arrived with `on_date=""` alongside the one argument that
+  mattered, which tripped a "needs a date" error and made the agent ask the
+  controller for a date it already had. Optional parameters need normalising at
+  the boundary, not trusting.
+- **A hallucinated year produces a wrong answer that passes the gate.** Asked
+  about "17 Sep" the model supplied 2025; the closure tool returned zero flights
+  and the reply said "0 flights affected". Grounded, and completely wrong. Two
+  fixes: state the operating window in the prompt, and make a tool refuse an
+  out-of-range date rather than return an empty result that looks like an
+  answer. **An empty result is the most dangerous shape a tool can return.**
+- **Collapsing the tool surface dropped a capability.** Going 17→9 lost
+  `earliest_next_report`, and Q23 asks for exactly that. The scoreboard could
+  not see it because the scoreboard calls the engine directly. Nine was the
+  right instinct and ten is the measured answer.
+- **Global identifiers leak across turns.** Claim ids came from a process-wide
+  counter, so they read `c200+` while the prompt's example said `{{claim:c7}}`,
+  and the model copied the example. That alone caused 13 of 14 correction
+  rounds — a third of all turns paying an extra round-trip for a formatting
+  detail.
+- **Test the measurement.** The replay scorer escaped non-ASCII, so the answer
+  keys' em dash could never be matched and two correct answers were recorded as
+  failures. The harness was wrong in the direction that made the system look
+  worse, which is the direction nobody double-checks. A number that is not
+  itself tested is not evidence.
+
+---
+
+## 10. If there were another day
 
 In the order I would actually do them:
 

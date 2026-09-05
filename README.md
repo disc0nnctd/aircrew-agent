@@ -17,7 +17,7 @@ is enforced by a gate, not by a line in a prompt. See
 | The 38 questions, through the engine | **36 / 36 gradable pass** (2 are rubrics, not values, and are never counted as passes) |
 | The 6 worked scenarios | **19 / 19 checks pass**, including S2's 19 exclusions byte for byte |
 | Agent loop and claim gate | **10 / 10 tests pass** |
-| The 38 questions, *through the agent* | **not measured** — needs an API key. See [Honest trade-offs](#honest-trade-offs). |
+| The 38 questions, *through the agent* (gpt-5.6-luna) | **35 / 36** gradable on the last run, re-scored; one genuine failure (Q27). Three fixes since are unverified — see [docs/ISSUES.md](docs/ISSUES.md). |
 
 ```bash
 python -m aircrew.scoreboard          # the engine number, no model required
@@ -135,13 +135,19 @@ inside the resolve result.
 
 ## Honest trade-offs
 
-**The agent number is not measured.** The brief asks for the 38 questions
-replayed *through the agent*, not only through the engine, because they are
-different numbers and only one is what a judge tests. `aircrew/replay.py` does
-exactly that and scores each question on routed / grounded / correct. It has
-not been run: no API key was available in the build environment. The engine
-number is real and reproducible; **the agent number is unknown, and the two
-should not be assumed equal.**
+**The agent number is lower than the engine number, and it moved a lot.** The
+first run through `gpt-5.6-luna` scored **21/38**. Fixing what that exposed — all
+of it in this codebase, none of it in the model — took it to 32/38 as reported,
+and to **35/36 gradable** once the scorer itself was fixed. The remaining failure
+is a routing miss on Q27. Three fixes landed after the last full run and are not
+live-verified; **run `python -m aircrew.replay` before quoting any number.**
+
+The agent-level failures were almost all tool-surface defects invisible from the
+engine: a model that fills every optional parameter with `""`, a hallucinated
+year that made a closure return "0 flights affected" (wrong, but grounded), and
+a tool that the 17→9 collapse had silently dropped. Two more were the *scorer*,
+which escaped the answer keys' em dash and so could never match two correct
+answers. Details in [docs/ISSUES.md](docs/ISSUES.md).
 
 **The claim gate matches figures, not meaning.** A number is accepted if it
 appears anywhere in this turn's tool results. So "the delay costs 486" passes
@@ -169,6 +175,10 @@ exclusions — the maximum 28-day block in the whole dataset is 79.28h against a
 100h limit. Both are still reported in `rules_checked` because the keys require
 it, but "we checked seven rules" would overstate what happened. Measurements in
 [docs/NOTES.md §3](docs/NOTES.md#3-the-surprise-which-rules-actually-bind).
+
+**Ten tools, not nine.** `earliest_next_report` was added back after the replay
+showed Q23 was unanswerable without it — the earned-scaffolding rule working in
+reverse.
 
 **Two questions have rubrics for answer keys** (Q36, Q38). They are marked
 `GEN` and never counted as passes; grading a rubric against itself is a fake

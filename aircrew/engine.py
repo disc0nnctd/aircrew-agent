@@ -361,6 +361,20 @@ class Engine:
         breaches = self.rules.check_duties(crew_id, duties, positioned=positioned)
         window_issue = self.rules.callable_now(crew_id, duties)
         crew = self.ds.crew_by_id[crew_id]
+        # "Can they cover it if positioned?" is also a question about what
+        # positioning costs the departure, and the answer is useless without
+        # it. Compute it here rather than making the caller run the resolver.
+        pos = None
+        dep = self.ds.flight_by_id[duties[0].flight_ids[0]]["dep_station"]
+        if crew["base"] != dep:
+            pos = self.positioning(crew["base"], duties[0])
+            if pos:
+                pos["consequence"] = (
+                    f"Deadhead positioning on {pos['deadhead_flight_no']} "
+                    f"(arr {pos['arrives_utc'][11:16]}Z) delays the first "
+                    f"departure by ~{pos['delay_hours']:g}h; RULE-BASE-07 "
+                    "deadhead cost applies."
+                )
         return {
             "crew_id": crew_id,
             "name": crew["name"],
@@ -368,6 +382,7 @@ class Engine:
             "base": crew["base"],
             "pairing_id": pairing_id,
             "days_covered": [fmt_date(d.on_date) for d in duties],
+            "positioning": pos,
             "callable": {
                 "is_reserve": crew_id in self.ds.reserve_by_id,
                 "callable": window_issue is None,

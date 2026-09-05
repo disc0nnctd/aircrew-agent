@@ -228,6 +228,17 @@ class Dataset:
         return [d["crew_id"] for d in self.duty_clocks]
 
     @cached_property
+    def schedule_dates(self) -> list[str]:
+        """Every date the schedule covers. Questions say "17 Sep" without a
+        year, and a model that supplies the wrong one gets an empty result that
+        still looks like an answer -- so the window is stated in the prompt and
+        checked by the tools."""
+        return sorted({f["date"] for f in self.flights})
+
+    def date_in_schedule(self, on_date: str) -> bool:
+        return on_date in self.schedule_dates
+
+    @cached_property
     def snapshot_utc(self) -> datetime:
         return parse_utc(self.duty_clocks[0]["as_of_utc"])
 
