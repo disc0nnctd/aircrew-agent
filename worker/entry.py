@@ -108,6 +108,18 @@ async def on_fetch(request, env):
         if path == "/api/tools":
             return _json(SCHEMAS)
 
+        if path == "/api/provider":
+            # At the edge the choice lives in the browser -- there is no
+            # process to hold it -- so this only offers the list. The panel
+            # reads its own stored config for what is selected now.
+            from aircrew.providers import PROVIDERS
+
+            return _json({
+                "current": {"base_url": None, "model": None, "key_set": False,
+                            "source": "browser"},
+                "providers": PROVIDERS,
+            })
+
         if path == "/api/prompt":
             from aircrew.agent import SYSTEM_PROMPT
 
@@ -131,6 +143,37 @@ async def on_fetch(request, env):
         payload = json.loads(await request.text() or "{}")
     except Exception:
         return _json({"error": "bad JSON body"}, 400)
+
+    if path == "/api/models":
+        # Proxied rather than fetched from the browser, so the key is not
+        # exposed to a cross-origin redirect or a preflight.
+        base = (payload.get("base_url") or "").strip().rstrip("/")
+        key = (payload.get("api_key") or "").strip()
+        if not base:
+            return _json({"error": "base_url required"}, 400)
+        try:
+            resp = await js_fetch(f"{base}/models", _to_js(
+                {"headers": {"authorization": f"Bearer {key}"}} if key else {}))
+            body = json.loads(await resp.text())
+        except Exception as exc:
+            return _json({"error": str(exc)[:200]})
+        listed = body.get("data") if isinstance(body, dict) else None
+        names = sorted(
+            (m.get("id") or "").split("/")[-1]
+            if str(m.get("id", "")).startswith("models/") else (m.get("id") or "")
+            for m in (listed or []) if isinstance(m, dict)
+        )
+        return _json({"models": [n for n in names if n]})
+
+    if path == "/api/provider":
+        # Nothing to store: the browser keeps the choice and sends it with each
+        # question. Accepted so the panel behaves the same in both deployments.
+        return _json({"ok": True, "current": {
+            "base_url": (payload.get("base_url") or "").strip(),
+            "model": (payload.get("model") or "").strip(),
+            "key_set": bool((payload.get("api_key") or "").strip()),
+            "source": "browser",
+        }})
 
     if path == "/api/tool":
         name = payload.get("name")

@@ -60,47 +60,8 @@ def desk_of(handler) -> str:
     return (said or "default")[:64]
 
 
-# Providers this has actually been run against, with what was observed. The
-# UI offers these as starting points; any OpenAI-compatible endpoint works,
-# because the loop only ever asks for one completion with tools.
-PROVIDERS = {
-    "sarvam": {
-        "label": "Sarvam AI",
-        "base_url": "https://api.sarvam.ai/v1",
-        "models": ["sarvam-105b", "sarvam-105b-conversations"],
-        "note": "Free tier. Tool calling works; answers in about 6 seconds.",
-    },
-    "gemini": {
-        "label": "Google Gemini",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "models": ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.8-flash",
-                   "gemini-2.5-flash"],
-        "note": "Free tier. 3.7-flash is the fastest tested; 3.8-flash hits the "
-                "free request quota quickly.",
-    },
-    "cloudflare": {
-        "label": "Cloudflare Workers AI",
-        "base_url": "https://api.cloudflare.com/client/v4/accounts/"
-                    "ACCOUNT_ID/ai/v1",
-        "models": ["@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-                   "@cf/mistralai/mistral-small-3.1-24b-instruct",
-                   "@cf/qwen/qwen3-30b-a3b-fp8"],
-        "note": "Put your account id in the URL. Avoid @cf/openai/gpt-oss-*: "
-                "they answer into a reasoning field and return no content.",
-    },
-    "nvidia": {
-        "label": "NVIDIA NIM",
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "models": ["meta/llama-3.3-70b-instruct", "qwen/qwen3-next-80b-a3b-instruct"],
-        "note": "Free developer tier. Untested here -- bring a key and try it.",
-    },
-    "openai": {
-        "label": "OpenAI-compatible (other)",
-        "base_url": "https://api.openai.com/v1",
-        "models": [],
-        "note": "Any endpoint that serves /chat/completions with tool calling.",
-    },
-}
+# The provider list lives in one place; see aircrew/providers.py.
+from .providers import PROVIDERS  # noqa: E402
 
 # What each desk chose in the settings panel. Keys live here and in nothing
 # else: never written to disk, never logged, never returned by the API.

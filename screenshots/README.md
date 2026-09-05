@@ -19,3 +19,5 @@ published dataset, driven through the browser — nothing here is a mockup.
 | `12-joint-plan.png` | Two captains lost at once |
 | `13-impact.png` | What a sick call breaks, before anything is recommended |
 | `14-briefing.png` | The technical briefing, behind the dev-view checkbox |
+| `15-settings.png` | Choosing a provider. The deployment holds no key; this one stays in the browser |
+| `16-edge-answer.png` | The same flagship answer, served from a Cloudflare Worker |

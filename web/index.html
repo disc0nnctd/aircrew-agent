@@ -741,24 +741,53 @@ function deskProvider(){
   const history = [...document.querySelectorAll('#log .msg')].map(m => {
     const who = (m.querySelector('.who') || {}).textContent;
     const body = m.querySelector('.body');
-    if(!body) return null;
+    if(!body || m.classList.contains('note') || m.classList.contains('err')) return null;
     if(who === 'Controller') return {role: 'user', content: body.innerText.trim()};
     if(who === 'Advisor') return {role: 'assistant', content: body.innerText.trim()};
     return null;
-  }).filter(Boolean).slice(0, -1);
+  }).filter(Boolean);
   return provider ? {provider, history} : {history};
 }
 
-async function showSettings(){
-  const state = await getJSON('/api/provider');
+/* The panel must open whatever the backend says. It used to await
+   /api/provider first, and the deployed Worker had no such route -- so the
+   button did nothing at all, with the failure only visible in the console. */
+const BUILT_IN_PROVIDERS = {
+  sarvam: {label: 'Sarvam AI', base_url: 'https://api.sarvam.ai/v1',
+    models: ['sarvam-105b', 'sarvam-105b-conversations'],
+    note: 'Free tier. Answers in about 6 seconds.'},
+  gemini: {label: 'Google Gemini',
+    base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'],
+    note: '3.7-flash is the fastest tested. 3.8-flash runs out of free quota fast.'},
+  cloudflare: {label: 'Cloudflare Workers AI',
+    base_url: 'https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/v1',
+    models: ['@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+             '@cf/mistralai/mistral-small-3.1-24b-instruct'],
+    note: 'Put your account id in the URL. Avoid @cf/openai/gpt-oss-*.'},
+  nvidia: {label: 'NVIDIA NIM', base_url: 'https://integrate.api.nvidia.com/v1',
+    models: ['meta/llama-3.3-70b-instruct'], note: 'Free developer tier.'},
+  openai: {label: 'OpenAI-compatible (other)', base_url: 'https://api.openai.com/v1',
+    models: [], note: 'Any endpoint serving /chat/completions with tool calling.'},
+};
+
+function showSettings(){
+  // Drawn from what this browser already knows, then refreshed. Awaiting the
+  // server first meant that on a cold Worker -- a second or more to wake --
+  // the button did nothing at all, with no sign it had been pressed.
+  const state = {providers: BUILT_IN_PROVIDERS, current: {}};
+  let stored = null;
+  try { stored = JSON.parse(sessionStorage.getItem(PROVIDER_KEY) || 'null'); } catch(e){}
+  let intro;
+  const describe = now => now.model
+    ? 'Answering now with ' + now.model + ' (' + (now.source || 'chosen here') + ').'
+    : 'No model yet. The workspace works without one; the chat needs a key.';
   modal('Model provider', () => {
     const wrap = el('div', 'settings');
-    const now = state.current || {};
-    wrap.appendChild(el('p', 'note',
-      now.model
-        ? 'Answering now with ' + now.model + ' (' + (now.source === 'settings'
-            ? 'chosen here' : 'from the environment') + ').'
-        : 'No model configured. The workspace still works without one.'));
+    const now = stored ? {base_url: stored.base_url, model: stored.model,
+                          key_set: !!stored.api_key, source: 'this browser'} : {};
+    intro = el('p', 'note', describe(now));
+    wrap.appendChild(intro);
 
     const row = (label, node) => {
       const d = el('label', 'field');
@@ -832,21 +861,34 @@ async function showSettings(){
     save.type = 'button';
     save.addEventListener('click', async () => {
       note.textContent = 'saving…';
+      const chosen = {base_url: url.value.trim(), model: model.value.trim(),
+                      api_key: key.value || (savedKey() || '')};
+      if(!chosen.base_url || !chosen.model){
+        note.textContent = 'a base URL and a model name are both needed'; return;
+      }
+      // Remembered first: a deployment with no server-side store still works,
+      // because the key travels with the question.
+      rememberProvider(chosen);
       const r = await api('/api/provider', {
-        base_url: url.value.trim(), model: model.value.trim(),
-        api_key: key.value,
+        base_url: chosen.base_url, model: chosen.model, api_key: key.value,
       });
-      if(r.error){ note.textContent = r.error + (r.detail ? ': ' + r.detail : ''); return; }
-      rememberProvider({base_url: url.value.trim(), model: model.value.trim(),
-                        api_key: key.value || (savedKey() || '')});
+      if(r && r.error){ note.textContent = r.error + (r.detail ? ': ' + r.detail : ''); return; }
       key.value = '';
-      note.textContent = 'now answering with ' + r.current.model;
+      note.textContent = 'now answering with ' + chosen.model;
       health();
     });
     buttons.appendChild(save);
     wrap.appendChild(buttons);
     return wrap;
   }, 'settings-modal');
+
+  // Whatever the server knows, once it answers. A deployment that holds no key
+  // says so; a local server started with one names it.
+  getJSON('/api/provider').then(live => {
+    if(live && live.providers) Object.assign(state.providers, live.providers);
+    const cur = live && live.current;
+    if(cur && cur.model && intro) intro.textContent = describe(cur);
+  }).catch(() => {});
 }
 
 function showFlow(){
@@ -1945,10 +1987,14 @@ $('#composer').addEventListener('submit', async ev => {
   ev.preventDefault();
   const q = $('#input').value.trim(); if(!q) return;
   $('#input').value = ''; $('#send').disabled = true;
+  // Read before the new turn is drawn: the question travels as `message`, and
+  // sending it in the transcript as well put it in the conversation twice --
+  // two user turns in a row, which some providers reject outright.
+  const carried = deskProvider();
   say('Controller', q, 'you');
   const pending = say('Advisor', 'Working…', 'note');
   try{
-    const r = await api('/api/chat', {message: q, ...deskProvider()});
+    const r = await api('/api/chat', {message: q, ...carried});
     pending.remove();
     // A table can put the rows this answer names first, so it has to know what
     // they are before anything is drawn.
@@ -1983,6 +2029,34 @@ $('#input').addEventListener('keydown', e => {
   if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); $('#composer').requestSubmit(); }
   if(e.key === 'Escape'){ $('#input').value = ''; }
 });
+
+/* The header line, and whether the chat is usable at all.
+
+   A deployment can hold no key of its own and still answer, because the
+   provider chosen in settings lives in this browser and travels with the
+   question. So "is there a model" is not only what /api/health says. */
+async function health(){
+  const [h, tools] = await Promise.all([getJSON('/api/health'), getJSON('/api/tools')]);
+  let mine = null;
+  try{ mine = JSON.parse(sessionStorage.getItem(PROVIDER_KEY) || 'null'); }catch(e){}
+  const named = h.model ? (h.model_name || 'model ready')
+              : (mine && mine.model ? mine.model + ' (this browser)' : null);
+  modelReady = !!named;
+  $('#dot').className = 'dot' + (modelReady ? '' : ' off');
+  const st = $('#status');
+  st.textContent = '';
+  st.appendChild(document.createTextNode('snapshot '));
+  st.appendChild(el('b', null, h.snapshot || '2026-09-14 18:00Z'));
+  st.appendChild(document.createTextNode(
+    ' · ' + h.crew + ' crew · ' + h.flights + ' flights · ' + tools.length + ' tools · '));
+  st.appendChild(el('b', null, named || 'engine only'));
+  $('#input').placeholder = modelReady
+    ? 'Describe the disruption…'
+    : 'No model yet — open settings to add one, or use the buttons above to drive the engine';
+  $('#workhint').textContent = modelReady
+    ? 'Every figure here was computed by the rules engine.'
+    : 'Model off. The workspace runs on the engine alone.';
+}
 
 /* --- boot --------------------------------------------------------------- */
 (async () => {
@@ -2021,20 +2095,7 @@ $('#input').addEventListener('keydown', e => {
     return p;
   })());
   try{
-    const [h, tools] = await Promise.all([getJSON('/api/health'), getJSON('/api/tools')]);
-    modelReady = !!h.model;
-    $('#dot').className = 'dot' + (modelReady ? '' : ' off');
-    const st = $('#status');
-    st.textContent = '';
-    st.appendChild(document.createTextNode('snapshot '));
-    st.appendChild(el('b', null, h.snapshot || '2026-09-14 18:00Z'));
-    st.appendChild(document.createTextNode(
-      ' · ' + h.crew + ' crew · ' + h.flights + ' flights · ' + tools.length + ' tools · '));
-    st.appendChild(el('b', null, modelReady ? (h.model_name || 'model ready') : 'engine only'));
-    if(!modelReady){
-      $('#input').placeholder = 'No model configured — use the buttons above to drive the engine directly';
-      $('#workhint').textContent = 'Model off. The workspace runs on the engine alone.';
-    }
+    await health();
   }catch(e){
     $('#status').textContent = 'engine unreachable';
     setPanels([(() => { const p = panel('Engine unavailable');
