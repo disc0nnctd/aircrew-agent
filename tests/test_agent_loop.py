@@ -414,6 +414,47 @@ def test_exclude_crew_re_ranks_rather_than_reading_the_next_row():
     assert all(o["rules_checked"] for o in again["data"]["options"] if o["crew_id"])
 
 
+def test_a_short_form_keeps_its_noun_but_never_says_it_twice():
+    # The model writes "{{claim}} operate BLR-BOM", so a bare "2" leaves the
+    # sentence without a subject; it also writes "{{claim}} certifications
+    # expire", where the noun would then appear twice.
+    c = {"text": "6 certifications expiring", "short": "6 certifications"}
+    assert grounding._pick(c, "There are ", " expire within 30 days.") == "6 certifications"
+    assert grounding._pick(c, "There are ", " certifications expire in 30 days.") == "6"
+    assert grounding._pick(c, "", "") == "6 certifications expiring"
+
+
+def test_every_figure_claim_can_be_written_mid_sentence():
+    # A claim with no short substitutes its whole standalone sentence wherever
+    # the model puts it, which is where the stutters came from.
+    t = Tools()
+    calls = [
+        ("crew_profile", {"crew_id": "C-1042"}),
+        ("trace_disruption", {"crew_id": "C-1042", "pairing_id": "P-2291"}),
+        ("check_assignment", {"crew_id": "C-3310", "pairing_id": "P-2291"}),
+        ("resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"}),
+        ("lookup", {"entity": "flights", "on_date": "2026-09-15"}),
+        ("lookup", {"entity": "certifications", "on_date": "2026-09-15"}),
+    ]
+    bare = []
+    for name, args in calls:
+        for c in dispatch(t, name, args)["claims"]:
+            if c["kind"] in ("number", "list") and c["short"] == c["text"]:
+                bare.append((name, c["text"]))
+    assert not bare, bare
+
+
+def test_a_single_flight_lookup_makes_no_comparison():
+    # "the most seats at risk is any A320 leg (162 seats), against " -- a
+    # comparison with nothing on the other side, which reached an answer.
+    t = Tools()
+    d = dispatch(t, "lookup",
+                 {"entity": "flights", "on_date": "2026-09-15", "flight_no": "DX412"})
+    assert "most_seats_at_risk" not in d["data"]
+    assert any(c["short"] == "162 seats" for c in d["claims"])
+    assert d["claims"][0]["text"] == "1 flight matched"
+
+
 if __name__ == "__main__":
     import sys
 

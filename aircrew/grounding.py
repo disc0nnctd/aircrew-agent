@@ -350,6 +350,28 @@ def _fit(text: str, before: str) -> str:
     return text
 
 
+_WORD = re.compile(r"[A-Za-z]+")
+
+
+def _unrepeat(short: str, head: str) -> str:
+    """Drop the short form's last word when the model writes it again next.
+
+    A count keeps its noun -- "2 flights", not a bare "2" -- because the model
+    writes "{{claim:c1}} operate BLR-BOM" and a lone digit leaves no subject.
+    But it also writes "{{claim:c1}} certifications expire", and then the noun
+    is said twice. One word at the seam is the whole problem, so one word is
+    all this looks at; the figure itself is never touched.
+    """
+    tail_word = _WORD.findall(short)
+    next_word = _WORD.match(head.lstrip("*_ "))
+    if not tail_word or not next_word:
+        return short
+    if tail_word[-1].lower() != next_word.group(0).lower():
+        return short
+    cut = short.rstrip()[: -len(tail_word[-1])].rstrip()
+    return cut or short
+
+
 def _pick(claim: dict, before: str, after: str = "") -> str:
     """The full sentence, or just the bare value, depending on where it lands.
 
@@ -384,7 +406,7 @@ def _pick(claim: dict, before: str, after: str = "") -> str:
     # Otherwise the model is building a sentence around it and has supplied the
     # label itself, so the bare figure is what belongs in the gap.
     if short != text:
-        return short
+        return _unrepeat(short, head)
 
     # No short form: drop whatever the model has already said, if anything.
     return _fit(text, before)
