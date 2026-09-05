@@ -103,8 +103,19 @@ def test_a_tool_name_never_reaches_the_controller():
     assert plain.ok
     assert "resolve_cover" not in plain.rendered
 
-    # ordinary English that merely contains a tool-ish word is untouched
-    assert grounding.check("The lookups are done.", [env]).ok
+    # Ordinary English must survive. "lookup" and "validate" are real words,
+    # and rejecting "let me validate that before you act" was exactly the
+    # false positive this file keeps warning about. Only the unambiguous
+    # underscore-shaped names are matched.
+    for english in ("The lookups are done.",
+                    "Let me validate that before you act.",
+                    "A quick lookup shows three flights."):
+        assert grounding.check(english, [env]).ok, english
+
+    # A leaked name is worth one rewrite and never worth withholding a true
+    # answer: it is a style fault, not an untruth.
+    assert not leaked.blocking
+    assert grounding.check("Cancelling would cost INR 1,250,000.", [env]).blocking
 
 
 def test_a_date_is_not_treated_as_a_figure():
@@ -215,6 +226,26 @@ def test_a_single_brace_placeholder_is_still_substituted():
     # an id this turn does not have is never printed as a token
     bad = grounding.check("Assign {claim:c99}.", [env])
     assert not bad.ok
+
+
+def test_the_short_form_is_the_bare_value():
+    """Inside a sentence the model is building, only the value is substituted,
+    and the model writes every surrounding word including the unit.
+
+    An earlier version kept the unit in the short form and needed a
+    de-duplicator to stop "5 legal legal candidates". That then failed on
+    "at **INR {{claim}}**", because the markdown hid the join and the reply
+    said "INR INR 18,500". One rule beats three: substitute the value, let the
+    model own the words."""
+    t = Tools()
+    env = dispatch(t, "trace_disruption", {"crew_id": "C-1042", "pairing_id": "P-2291"})
+    cover = dispatch(t, "resolve_cover", {"pairing_id": "P-2291", "vacated_by": "C-1042"})
+    renumber([env, cover])
+
+    assert grounding.check("affecting **{{claim:c2}} passengers**.", [env]).rendered ==         "affecting **486 passengers**."
+    assert grounding.check("There are **{{claim:c4}}** legal candidates.", [env, cover]).rendered ==         "There are **5** legal candidates."
+    # standing alone it still supplies its own label
+    assert grounding.check("{{claim:c2}}.", [env]).rendered == "486 passengers on day 1."
 
 
 def test_a_claim_does_not_repeat_what_the_model_already_wrote():

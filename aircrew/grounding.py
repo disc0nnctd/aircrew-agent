@@ -77,10 +77,13 @@ DATE_NUM_RE = re.compile(
 # reply reads as a debug log leaking into an operational answer, and the names
 # come straight from the `missing` field, which the model is right to be
 # reading. So the steer stays technical and the reply has to be plain.
+# Only the unambiguous ones. "lookup" and "validate" are ordinary English --
+# "let me validate that before you act" is a good sentence, and rejecting it
+# was exactly the false positive this file keeps warning about.
 TOOL_NAMES = (
-    "lookup", "crew_profile", "trace_disruption", "check_assignment",
+    "crew_profile", "trace_disruption", "check_assignment",
     "duty_timeline", "simulate_disruption", "resolve_cover",
-    "earliest_next_report", "draft_notification", "validate",
+    "earliest_next_report", "draft_notification",
 )
 TOOL_NAME_RE = re.compile(r"\b(" + "|".join(TOOL_NAMES) + r")\b")
 
@@ -196,6 +199,22 @@ class Grounding:
     mislabelled_figures: list[dict] = field(default_factory=list)
     spelled_figures: list[str] = field(default_factory=list)
     leaked_tool_names: list[str] = field(default_factory=list)
+
+    @property
+    def blocking(self) -> bool:
+        """Reasons an answer must not be printed at all.
+
+        A leaked tool name is a style fault: the answer is true, it just reads
+        like a debug log. Worth one rewrite, never worth withholding a correct
+        recovery plan from a controller at 3 a.m. Only untruths block.
+        """
+        return bool(
+            self.ungrounded_numbers
+            or self.unbacked_verdicts
+            or self.mislabelled_figures
+            or self.spelled_figures
+            or LEFTOVER_RE.search(self.rendered)
+        )
 
     def corrective_prompt(self) -> str:
         bits = []
@@ -332,7 +351,7 @@ def _fit(text: str, before: str) -> str:
 
 
 def _pick(claim: dict, before: str, after: str = "") -> str:
-    """The full sentence, or just the figure, depending on where it lands.
+    """The full sentence, or just the bare value, depending on where it lands.
 
     The model writes its own lead-in. "C-1042's absence breaks three flights on
     day one: {{claim:c1}}" with the full claim substituted reads "...on day
@@ -340,6 +359,12 @@ def _pick(claim: dict, before: str, after: str = "") -> str:
     announced twice, once by the model and once by the engine. After a colon,
     a dash, or a lead-in the model has already finished, the bare figure is
     what belongs there.
+
+    The short form is the value and nothing else -- "18,500", not
+    "INR 18,500" -- so the model writes every surrounding word itself and
+    nothing can collide at the seam. An earlier version kept the unit and
+    needed a de-duplicator, which then failed on "at **INR {{claim}}**"
+    because the markdown hid the join. One rule beats three.
 
     Both forms come from the engine, so this only chooses how much of the
     engine's own wording to use. It can never introduce a figure.

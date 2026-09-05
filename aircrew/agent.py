@@ -95,6 +95,8 @@ yourself and let the placeholder supply the value:
     good:  Three flights are uncovered on day 1: {{claim:c1}}.
     bad:   Three flights are uncovered on day 1: 3 flights uncovered on day 1: DX412 ...
 
+A cost placeholder already carries the currency, so do not write INR in front of one: "at {{claim:c4}}", never "at INR {{claim:c4}}".
+
 HOW TO WRITE IT
 
 You are talking to a crew controller, not to a developer. Never name a tool, a \
@@ -294,6 +296,11 @@ class Agent:
 
         g2 = grounding.check(msg.get("content") or "", results)
         if g2.ok:
+            return Turn(g2.rendered, calls, results, g2, corrected=True)
+        if not g2.blocking:
+            # The second draft is true; it just still reads like a debug log.
+            # Withholding a correct recovery plan over wording would be a far
+            # worse failure than printing a tool name.
             return Turn(g2.rendered, calls, results, g2, corrected=True)
         return Turn(
             "I could not ground every figure in that answer against a computed "

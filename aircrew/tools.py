@@ -167,7 +167,8 @@ class Tools:
             return bad
         if entity == "flights":
             d = q.flights(on_date, dep, arr, flight_no, aircraft, longest_block)
-            cl = [claim("number", f"{d['count']} flights match", d["count"], ["flights.json"])]
+            cl = [claim("number", f"{d['count']} flights match", d["count"], ["flights.json"],
+                    short=str(d["count"]))]
             if d.get("most_seats_at_risk"):
                 m = d["most_seats_at_risk"]
                 cl.append(
@@ -213,7 +214,8 @@ class Tools:
             return envelope(
                 f"{d['count']} crew match. {note}.",
                 d,
-                [claim("number", f"{d['count']} crew match", d["count"], ["crew.json"])],
+                [claim("number", f"{d['count']} crew match", d["count"], ["crew.json"],
+                       short=str(d["count"]))],
                 [] if on_date else ["duty hours and headroom need on_date"],
             )
 
@@ -226,7 +228,8 @@ class Tools:
                 + (f" at {base}" if base else "")
                 + ". On-call window is eligibility to be called, not legality.",
                 d,
-                [claim("number", f"{d['count']} reserves on call", d["count"], ["reserve_pool.json"])],
+                [claim("number", f"{d['count']} reserves on call", d["count"],
+                       ["reserve_pool.json"], short=str(d["count"]))],
                 ["being on call does not mean the assignment is legal; use check_assignment"],
             )
 
@@ -237,7 +240,8 @@ class Tools:
             return envelope(
                 f"{d['count']} certifications expire within {d['within_days']} days of {on_date}.",
                 d,
-                [claim("number", f"{d['count']} certifications expiring", d["count"], ["certifications.json"])],
+                [claim("number", f"{d['count']} certifications expiring", d["count"],
+                       ["certifications.json"], short=str(d["count"]))],
                 ["validity is tested against valid_to only"],
             )
 
@@ -266,7 +270,8 @@ class Tools:
             return envelope(
                 f"Risk score for {crew_id} is {d['score']} (a provided input, not a rule).",
                 d,
-                [claim("number", f"{crew_id} disruption-risk score {d['score']}", d["score"], ["risk_signals.json"])],
+                [claim("number", f"{crew_id} disruption-risk score {d['score']}", d["score"],
+                       ["risk_signals.json"], short=str(d["score"]))],
                 ["risk score never makes an assignment illegal; it is context only"],
             )
 
@@ -542,9 +547,11 @@ class Tools:
                 return envelope(d["error"], d)
             cl = [
                 claim("number", f"the cheapest joint plan costs {inr(d['total_cost_inr'])}",
-                      d["total_cost_inr"], ["costs.json"]),
+                      d["total_cost_inr"], ["costs.json"],
+                      short=inr(d["total_cost_inr"])),
                 claim("number", f"{d['plan_count']} legal joint plans were enumerated",
-                      d["plan_count"], ["exhaustive search"]),
+                      d["plan_count"], ["exhaustive search"],
+                      short=str(d["plan_count"])),
             ]
             for i, v in enumerate(vacancies):
                 key = v.get("label") or f"assign_{i+1}"
@@ -557,7 +564,8 @@ class Tools:
             if d["tie_count"] > 1:
                 cl.append(
                     claim("number", f"{d['tie_count']} plans tie at {inr(d['total_cost_inr'])}",
-                          d["tie_count"], ["exhaustive search"])
+                          d["tie_count"], ["exhaustive search"],
+                          short=str(d["tie_count"]))
                 )
                 tie = (
                     f" {d['tie_count']} plans tie at that cost, so cost does not "
@@ -583,7 +591,8 @@ class Tools:
                   d["legal_candidate_count"], ALL_RULES,
                   short=str(d["legal_candidate_count"])),
             claim("number", f"{d['excluded_count']} candidates are excluded "
-                  f"({d['exclusions_orientation']})", d["excluded_count"], ALL_RULES),
+                  f"({d['exclusions_orientation']})", d["excluded_count"], ALL_RULES,
+                  short=str(d["excluded_count"])),
         ]
         if rec:
             cl.append(

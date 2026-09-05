@@ -319,7 +319,18 @@ tr.dim td{color:var(--ink-dim)}
 
 /* exclusions: visible and grouped, not collapsed at the bottom. They are what a
    controller most wants to challenge. */
+/* Flight numbers as chips. A row of DX412 DX413 DX588 is scannable; the same
+   thing as "DX412-2026-09-15, DX413-2026-09-15, DX588-2026-09-15" is a string. */
+.legs{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 12px}
+.leg{font-family:var(--mono);font-size:11.5px;padding:2px 7px;border-radius:4px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink-dim)}
+
 details.more ul{margin:0;padding:6px 12px 10px 28px;font-size:12px;color:var(--ink-dim)}
+.excl-list{list-style:none;padding:6px 12px 10px!important}
+.excl-list li{display:flex;gap:8px;align-items:baseline;padding:4px 0;
+  border-top:1px solid var(--line);font-family:var(--sans);font-size:12.5px}
+.excl-list li:first-child{border-top:none}
+.excl-list li strong{font-family:var(--mono);color:var(--ink);min-width:64px}
 details.more li{margin:3px 0;font-family:var(--mono);font-size:11.5px}
 details.more li .reason-line{font-family:var(--sans);font-size:12px}
 
@@ -754,7 +765,7 @@ function showBriefing(){
       const tb = el('tbody');
       [['38 questions through the engine', '36/36 gradable', 'python -m aircrew.scoreboard'],
        ['6 worked scenarios', '19/19 checks', 'same command'],
-       ['Agent loop and claim gate', '20/20', 'python -m tests.test_agent_loop'],
+       ['Agent loop and claim gate', '21/21', 'python -m tests.test_agent_loop'],
        ['Workspace and chat pane', '67 checks', 'node tests/ui_check.js'],
        ['38 questions through the agent', '35/36 re-scored, not re-run live', 'python -m aircrew.replay']]
         .forEach(row => {
@@ -1029,33 +1040,37 @@ function pResolve(env){
   out.push(p);
 
   if(d.exclusions && d.exclusions.length){
-    const ep = panel('Why the others were ruled out — grouped by first failing rule',
-                     d.exclusions.length + ' excluded');
-    const groups = {};
-    d.exclusions.forEach(x => (groups[x.rule] = groups[x.rule] || []).push(x));
-    // Largest group first, all shut. The shape of the rejection is the
-    // finding -- "9 rest, 8 rating, 1 duty, 1 base" fits on one screen and
-    // answers "who did you consider?" -- while 19 names does not. Opening the
-    // biggest group by default buried the other three below the fold.
-    Object.keys(groups).sort((a,b) => groups[b].length - groups[a].length)
-      .forEach((rule, i) => {
-        const head = el('span');
-        head.appendChild(el('b', null, groups[rule].length + ' × '));
-        head.appendChild(ruleTag(rule, 'bad'));
-        ep.appendChild(more(head, groups[rule].length + ' crew', () => {
-          const ul = el('ul');
-          groups[rule].forEach(x => {
-            const li = el('li');
-            li.appendChild(document.createTextNode(x.crew_id + ' '));
-            // Strip the group's own rule id from each row: the heading already
-            // says it, and a wall of identical red badges stops reading as red.
-            reasonWithRules(li, String(x.reason || '')
-              .split(/;\s+/).map(f => f.replace(rule + ': ', '')).join('; '), 'bad');
-            ul.appendChild(li);
-          });
-          return ul;
-        }, {why: groups[rule][0].rule_text || gloss(rule)}));
-      });
+    // One list, one row per person, the way v1 showed it. Grouping by rule
+    // put the shape of the rejection first, but the controller argues about
+    // people: "why not C-5837?" is answered by finding C-5837, not by opening
+    // the rest group and scanning. Rows stay sorted by rule so like reasons
+    // still sit together, and the whole list is folded so it is available
+    // without being a wall.
+    const ep = panel('Why the others were ruled out', d.exclusions.length + ' excluded');
+    const byRule = {};
+    d.exclusions.forEach(x => (byRule[x.rule] = byRule[x.rule] || []).push(x));
+    const order = Object.keys(byRule).sort((a, b) => byRule[b].length - byRule[a].length);
+    const shape = order.map(r => byRule[r].length + ' ' + (gloss(r) ? r.split('-')[1].toLowerCase() : r)).join(', ');
+
+    ep.appendChild(more('Every candidate considered', d.exclusions.length + ' ruled out', () => {
+      const ul = el('ul', 'excl-list');
+      order.forEach(rule => byRule[rule].forEach(x => {
+        const li = el('li');
+        li.appendChild(el('strong', null, x.crew_id));
+        li.appendChild(document.createTextNode(' '));
+        // A reason with no rule id in it is not a rule breach: the reserve
+        // on-call window decides whether someone can be called at all, and
+        // the engine files it under RULE-BASE-07 for grouping. Showing that
+        // id in red here would contradict the distinction the product spends
+        // its whole check_assignment result making, so it gets a neutral chip.
+        if(!/RULE-[A-Z]+-\d+|DOUBLE-BOOKED/.test(x.reason || ''))
+          li.appendChild(el('span', 'tag info', 'not callable'));
+        reasonWithRules(li, x.reason, 'bad');
+        ul.appendChild(li);
+      }));
+      return ul;
+    }, {why: shape}));
+
     out.push(ep);
   }
   return out;
@@ -1135,12 +1150,24 @@ function pTrace(env){
   const p = panel('Uncovered — ' + esc(d.crew_id) + ' off ' + esc(d.pairing_id),
                   d.total_flights + ' flights');
   const head = el('div','headline');
+  // The caption under a figure is a label, not a footnote. It used to carry a
+  // full list of flight ids under "Day 1 flights" and the disclaimer "per day,
+  // not the pairing total" under the passenger count, which is a sentence
+  // nobody reads at 6 a.m. The ids are chips below and the caption says which
+  // day it is; the table underneath already shows every day separately.
+  const day1 = (d.by_day && d.by_day[0]) ? d.by_day[0].date : '';
   [['Role', d.role_on_pairing, d.aircraft],
-   ['Day 1 flights', d.day1.length, d.day1.join(', ')],
-   ['Day 1 passengers', d.passengers_day1, 'per day, not the pairing total']]
+   ['Flights lost', d.total_flights, d.by_day.length + ' duty days'],
+   ['Passengers', d.passengers_day1, day1 ? 'on ' + day1 : 'day 1']]
     .forEach(([k,v,s]) => { const f = el('div','fig'); f.appendChild(el('div','k',k));
       f.appendChild(el('div','v accent', v)); f.appendChild(el('div','s',s)); head.appendChild(f); });
   p.appendChild(head);
+
+  // Flight numbers as chips: DX412 reads, DX412-2026-09-15 does not, and the
+  // date is already the row it sits in.
+  const legs = el('div','legs');
+  d.day1.forEach(f => legs.appendChild(el('span','leg', String(f).split('-')[0])));
+  p.appendChild(legs);
   const tw = el('div','tw'), t = el('table');
   t.innerHTML = '<thead><tr><th>Date</th><th>Passengers</th><th>Report</th><th>Release</th><th>Flights</th></tr></thead>';
   const tb = el('tbody');
@@ -1150,7 +1177,7 @@ function pTrace(env){
     tr.appendChild(el('td','num', day.passengers));
     tr.appendChild(el('td','num', hhmm(day.report_utc)));
     tr.appendChild(el('td','num', hhmm(day.release_utc)));
-    tr.appendChild(el('td', null, day.flights.join(', ')));
+    tr.appendChild(el('td', null, day.flights.map(f => String(f).split('-')[0]).join(', ')));
     tb.appendChild(tr);
   });
   t.appendChild(tb); tw.appendChild(t); p.appendChild(tw);

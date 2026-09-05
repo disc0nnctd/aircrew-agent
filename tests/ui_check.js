@@ -113,19 +113,21 @@ setTimeout(async () => {
   const exclPanel = [...w.document.querySelectorAll('#panels .panel')]
     .find(p => /ruled out/i.test(p.querySelector('h3').textContent));
   check('there is an exclusions panel', !!exclPanel);
-  const groups = exclPanel.querySelectorAll('details.more');
-  check('exclusions are grouped into details', groups.length >= 3, `${groups.length} groups`);
-  const open = [...groups].filter(d => d.open);
-  check('every exclusion group starts shut', open.length === 0, `${open.length} open`);
-  check('the biggest group is listed first',
-        /9 &#215;|9 ×/.test(groups[0].querySelector('summary').innerHTML),
-        groups[0].querySelector('summary').textContent);
-  check('a shut group still says how many it holds',
-        /\d+ crew/.test(groups[1].querySelector('summary').textContent),
-        groups[1].querySelector('summary').textContent);
-  check('the group summary carries a rule tag', !!groups[0].querySelector('.rule-tag'));
-  const hidden = groups[1].querySelector('ul');
-  check('the rows exist even while folded', !!hidden && hidden.children.length > 0);
+  // One row per person, the way v1 showed it: the controller argues about
+  // people, not about rule groups.
+  const exclFold = exclPanel.querySelector('details.more');
+  check('exclusions fold into one list', !!exclFold);
+  check('the list starts shut', exclFold && !exclFold.open);
+  check('the summary says how many were ruled out',
+        /19 ruled out/.test(exclFold.querySelector('summary').textContent),
+        exclFold.querySelector('summary').textContent);
+  check('the summary still shows the shape of the rejection',
+        /rest/.test(exclFold.querySelector('summary').textContent),
+        exclFold.querySelector('summary').textContent);
+  const rows = exclFold.querySelectorAll('.excl-list li');
+  check('every excluded candidate has its own row', rows.length === 19, rows.length + ' rows');
+  check('each row names the person', /C-\d{4}/.test(rows[0].textContent), rows[0].textContent);
+  check('each row carries its rule as a tag', !!rows[0].querySelector('.rule-tag'));
 
   // a wide lookup folds past the first rows
   const many = {summary:'142 crew match', claims:[], data:{count:142,
@@ -179,13 +181,21 @@ setTimeout(async () => {
         w.humanise('RULE-REST-04: only 10.75h rest before P-2204 on 2026-09-17')
           .includes('only 10.75h rest'));
 
+  // With one row per person the rule belongs on the row, since there is no
+  // group heading above it to carry it.
   w.setPanels(w.panelsFor('resolve_cover', {}, payload), 'q1');
-  const restGroup = [...w.document.querySelectorAll('#panels .panel')]
+  const list = [...w.document.querySelectorAll('#panels .panel')]
     .find(p => /ruled out/i.test(p.querySelector('h3').textContent))
     .querySelector('details.more');
-  const rowBadges = restGroup.querySelectorAll('li .rule-tag').length;
-  check('rows do not repeat the group rule badge', rowBadges === 0, rowBadges + ' badges on rows');
-  check('the group heading still carries it', !!restGroup.querySelector('summary .rule-tag'));
+  const rows2 = [...list.querySelectorAll('.excl-list li')];
+  const labelled = rows2.filter(li => li.querySelector('.rule-tag, .tag')).length;
+  check('every row says what stopped that person', labelled === 19,
+        labelled + ' of 19 labelled');
+  // the on-call window is not a rule breach, so it must not wear a rule id
+  const oncall = rows2.find(li => /on-call window/.test(li.textContent));
+  check('the on-call window row is not badged as a rule breach',
+        !!oncall && !oncall.querySelector('.rule-tag') && !!oncall.querySelector('.tag'),
+        oncall && oncall.textContent.slice(0, 70));
 
   // 8. the boundary and the flow
   const tools = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture_tools.json'), 'utf8'));
