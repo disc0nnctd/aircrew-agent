@@ -24,6 +24,9 @@ node_modules/
 # Generated deploy bundle: rebuilt by worker/build.py before every deploy.
 worker/dist/
 
+# Wrangler CLI cache: holds the Cloudflare account id and the login's email address.
+worker/.wrangler/
+
 # draw.io editor backups
 .$*
 *.bkp
