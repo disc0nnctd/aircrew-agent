@@ -1,0 +1,8 @@
+{
+  "name": "crew-ops-advisor-tests",
+  "private": true,
+  "description": "Test-only. The Python engine, CLI and server import nothing outside the standard library, and web/index.html has no build step and fetches nothing from a network. jsdom is here for one reason: so tests/ui_check.js and tests/review_astra_ui.js can run the shipped page headless.",
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

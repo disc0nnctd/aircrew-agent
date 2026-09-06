@@ -142,9 +142,14 @@ counting why candidates were excluded:
 
 **Two of the seven rules never eliminate anybody.** The maximum 28-day block
 across every crew member and every roster day is **79.28h against a 100h limit**
-(C-2143 on 2026-09-20) — 21 hours of headroom that nothing in this week comes
-close to consuming. RULE-FDP-01 never fires as an *exclusion* either, though it
-is the rule that breaks under a delay (Q20, S4), which is a different question.
+(recomputed; C-2143 on 2026-09-20) — 21 hours of headroom that nothing in this
+week comes close to consuming. Two numbers are in play and they measure
+different things: `flight_hours_28d` as published in `duty_clocks.json` is a
+snapshot-day figure and tops out at 79.24h, also C-2143. The recomputation
+reproduces that value exactly on the snapshot day; 79.28h is where the same crew
+member lands once the rest of the roster week is added. RULE-FDP-01 never fires
+as an *exclusion* either, though it is the rule that breaks under a delay (Q20,
+S4), which is a different question.
 
 Both must still be listed in `rules_checked` on every candidate — the keys
 require it — but a system that presented "we checked seven rules" as
@@ -170,7 +175,7 @@ not already working on either cover day" filter returns **9** captains. The
 correct answer is **5**. The four that drop out are all downstream: the pairing
 releases them at DEL on the 16th and they have their own duty on the 17th.
 
-*(TASK.md quotes 13 for the naive figure; I get 9. The difference is which
+*(The build brief quotes 13 for the naive figure; I get 9. The difference is which
 filter you call naive — mine already excludes crew rostered on the cover days.
 The finding is the same shape either way: roughly half the plausible-looking
 candidates are eliminated by duties that happen after the cover ends.)*
@@ -298,21 +303,22 @@ attached to the thing that would otherwise be over-read.
 
 ---
 
-## 8. Compared with `main`
+## 8. Compared with the earlier implementation
 
-`main` is a complete prior implementation of the same brief. The two branches
-have **no common ancestor** — `TASK.md` on this branch is `docs/REBUILD_PROMPT.md`
-on `main`, so this is a second independent pass at the same spec by the same
-author. That makes it a genuine cross-check rather than a diff.
+The comparison below is against an earlier, complete implementation of the same
+brief by the same author — a first pass, built and then replaced rather than
+extended. The two share **no common ancestor** and no code; each was written from
+its own copy of the brief. That makes this a genuine cross-check rather than a
+diff. That implementation is not published in this repository, so the figures in
+this section are reported, not reproducible from this tree.
 
 ### Shape
 
-| | `main` | `rebuild` (this branch) |
+| | earlier build | this build |
 | --- | ---: | ---: |
-| Code lines (py/js/css/html) | 10,738 | 5,221 |
-| Tools | 23 | 9 |
-| Tests | 267 passing, 20 skipped | 10 passing |
-| Doc lines | 2,635 | 1,386 |
+| Code lines (py/js/html) | 10,738 | 9,450 |
+| Tools | 23 | 10 |
+| Tests | 267 passing, 20 skipped | 30 loop + 13 review regressions + 127 DOM checks |
 | Questions | **36/36**, 2 GEN | **36/36**, 2 GEN |
 | Scenario checks | not separately scored | 19/19 |
 
@@ -333,13 +339,13 @@ check order — are right rather than merely self-consistent.
 ### The 51 that differ have one cause
 
 Every remaining difference is the same thing: when `resolve_cover` is called
-with a role but no named person, `main` offers **the sole incumbent of that role
-as a candidate to cover their own vacancy**.
+with a role but no named person, the earlier build offers **the sole incumbent of
+that role as a candidate to cover their own vacancy**.
 
 ```
 P-2204, First Officer   (C-2791 is the only FO rostered on it)
-  ours:  C-3312 · C-1510 · C-1895 · C-2295 · C-2888
-  main:  C-3312 · C-1510 · C-1895 · C-2295 · C-2791   ← the person who is out
+  this build:     C-3312 · C-1510 · C-1895 · C-2295 · C-2888
+  earlier build:  C-3312 · C-1510 · C-1895 · C-2295 · C-2791   ← the person who is out
 ```
 
 51/51 of the differences are that, and it never shows in grading because every
@@ -361,17 +367,17 @@ exercising it.
 
 ### Where the designs actually differ
 
-**`main` has no gate on invented figures.** "Grounded" there means tool results
-are kept in the transcript so a claim *can* be traced — a convention, not an
-enforcement. Its only agent-side mechanism is the deferral push-back that
-detects the model announcing a tool instead of calling it, which its own rebuild
-prompt records as having "ran 137 lines and fired zero times on a frontier
-model". The claim envelope and the substitution gate on this branch are the
-substantive addition, and they are what the amended brief asked for: the agent
+**The earlier build has no gate on invented figures.** "Grounded" there means
+tool results are kept in the transcript so a claim *can* be traced — a
+convention, not an enforcement. Its only agent-side mechanism is the deferral
+push-back that detects the model announcing a tool instead of calling it, which
+the build brief records as having "ran 137 lines and fired zero times on a
+frontier model". The claim envelope and the substitution gate in this build are
+the substantive addition, and they are what the amended brief asked for: the agent
 may propose, but only a validated deterministic result may be stated.
 
-**23 tools, not the seventeen its own prompt specifies.** The drift includes the
-two the prompt explicitly warns against:
+**It has 23 tools, not the seventeen its own prompt specifies.** The drift
+includes the two the prompt explicitly warns against:
 
 - `check_rules_only` — a second tool for the second verdict. Here that is two
   sections of one `check_assignment` result, which is what the prompt
@@ -382,16 +388,17 @@ two the prompt explicitly warns against:
   forward". That is a tool built to fight a layout decision. Here exclusions are
   rendered inline, expanded and grouped by rule, so there is nothing to fight.
 
-**`main` keeps `dedupe_overlap_day`** (defaulting to `False`) as a switch for
-"the airline-correct value". This branch removed it: adding the two sources
-reproduces the published field for 150/150 crew and de-duplicating reproduces it
-for none, so the flag has no defensible second setting.
+**The earlier build keeps `dedupe_overlap_day`** (defaulting to `False`) as a
+switch for "the airline-correct value". This build removed it: adding the two
+sources reproduces the published field for 150/150 crew and de-duplicating
+reproduces it for none, so the flag has no defensible second setting.
 
-**`main` is far better tested.** 267 tests across 19 files, including a
-dedicated file per rule, against 10 here. The scoreboard plus the scenario
-checks cover the engine's behaviour end to end, but there is nothing on this
-branch equivalent to `test_rule_rest.py` exercising a rule in isolation. That is
-the clearest thing this branch is missing.
+**The earlier build has the test axis this one does not.** 267 collected tests
+across 19 files there, including a dedicated file per rule. This build has 30
+loop and gate tests, 13 outside-review regressions and 127 DOM checks, plus the
+scoreboard and the scenario checks — but nothing equivalent to a
+`test_rule_rest.py` exercising a single rule in isolation. That is the clearest
+gap left.
 
 ---
 
@@ -433,9 +440,11 @@ in this codebase rather than in the model:
 
 In the order I would actually do them:
 
-1. **Run `replay.py`.** The through-the-agent number is the one a judge tests
-   and it is currently unknown. Everything below is speculation until it exists.
-2. **Measure whether nine tools route better or worse than a flatter surface.**
+1. **Run `replay.py` again.** It has been run — 35/36 gradable on the last
+   recorded pass — but three fixes have landed since and none is live-verified.
+   The through-the-agent number is the one a judge tests, and the one on record
+   is now older than the code.
+2. **Measure whether ten tools route better or worse than a flatter surface.**
    The argument for collapsing lookups into `lookup(entity, …)` is readability;
    the argument against is that a union argument is harder to route. Only the
    replay can settle it, and the wrappers are thin either way.

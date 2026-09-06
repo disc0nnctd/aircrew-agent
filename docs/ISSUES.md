@@ -1,16 +1,17 @@
-# Open issues and handover
+# Open issues and what is unverified
 
-State as of the last commit on `rebuild`. Written for whoever picks this up
-next. Everything here is measured or reproducible; nothing is a guess, and
-where something is unverified it says so.
+The brief says it plainly: "Overstating capability scores badly; documented
+failure scores well." So this is what is still wrong, what is unverified,
+and what was fixed, with the evidence for each. Everything here is measured or
+reproducible; where something is unverified it says so.
 
 ## Where the numbers stand
 
 | Measurement | Result | Verified |
 | --- | --- | --- |
-| 38 questions through the **engine** | **36/36** gradable, 2 GEN | yes, `python -m aircrew.scoreboard` |
+| 38 questions through the **engine** | **36/36** gradable, 2 GEN | yes, `python3 -m aircrew.scoreboard` |
 | 6 scenarios | **19/19** checks | yes, same command |
-| Agent loop + claim gate unit tests | **13/13** | yes, `python -m tests.test_agent_loop` |
+| Agent loop + claim gate unit tests | **30/30** | yes, `python3 -m tests.test_agent_loop` |
 | 38 questions through the **agent** (luna), run 1 | 21/38 | yes, measured |
 | 38 questions through the **agent** (luna), run 2 | 32/38 as reported | yes, measured |
 | Run 2 **re-scored** after fixing the scorer | **35/36** gradable | yes, offline replay of the recorded calls |
@@ -22,17 +23,17 @@ Q27 the only genuine failure. That re-score is real — it replays the exact
 arguments the model chose — but it is **not** the same as a fresh run, because
 three fixes landed after it and none has been exercised live.
 
-**First thing to do: run it.**
+**To reproduce the agent number, run it:**
 
 ```bash
-export AIRCREW_API_KEY=$(grep -m1 '^OPENAI_API_KEY=' ~/Keys/.env.keys | cut -d= -f2-)
-export AIRCREW_BASE_URL=http://100.96.201.27:2455/v1     # codex-lb, tailnet
+export AIRCREW_API_KEY=<your key>
+export AIRCREW_BASE_URL=<your OpenAI-compatible endpoint>/v1
 export AIRCREW_MODEL=gpt-5.6-luna
-python -m aircrew.replay --out /tmp/replay3.json
+python3 -m aircrew.replay --out /tmp/replay3.json
 ```
 
-Takes roughly 15–20 minutes and spends real tokens on the user's gateway. Ask
-first.
+Takes roughly 15–20 minutes and spends real tokens against whatever endpoint
+you point it at.
 
 ---
 
@@ -83,12 +84,15 @@ to drop sharply; if it does not, that is the first thing to investigate.
 all landed after the last full run. Q21 and Q30 are confirmed correct by offline
 replay of the recorded calls; the renumbering is not confirmed at all.
 
-### 4. Test coverage is thin next to `main`
+### 4. There is no per-rule unit test
 
-10 tests here against 267 on `main`, which has a dedicated file per rule. The
-scoreboard plus scenario checks cover the engine end to end, but there is
-nothing equivalent to `test_rule_rest.py` exercising one rule in isolation. This
-is the clearest structural gap in the branch.
+30 loop and gate tests, 13 outside-review regressions and 127 DOM checks, plus
+the scoreboard and the scenario checks, cover the engine end to end. What is
+missing is the other axis: there is nothing equivalent to a `test_rule_rest.py`
+exercising one rule in isolation, so a rule that broke in a way the six
+scenarios do not exercise would not be caught. The earlier implementation this
+build was cross-checked against had a dedicated file per rule; this one does
+not.
 
 ### 5. The claim gate matches figures, not meaning
 
@@ -136,24 +140,24 @@ evidence.
 
 ```bash
 # engine only — no key, no dependencies
-python -m aircrew.scoreboard
-python -m aircrew.cli resolve --pairing P-2291 --vacated-by C-1042
+python3 -m aircrew.scoreboard
+python3 -m aircrew.cli resolve --pairing P-2291 --vacated-by C-1042
 
-# workspace, with luna, over the tailnet
-export AIRCREW_API_KEY=... AIRCREW_BASE_URL=http://100.96.201.27:2455/v1
+# workspace, with a model attached
+export AIRCREW_API_KEY=<your key> AIRCREW_BASE_URL=<your OpenAI-compatible endpoint>/v1
 export AIRCREW_MODEL=gpt-5.6-luna
-python -m aircrew.server --host 0.0.0.0 --port 8765
-# http://dcmini-1.tail1e3236.ts.net:8765
+python3 -m aircrew.server --host 0.0.0.0 --port 8765
+# then open http://127.0.0.1:8765
 ```
 
-`--host 0.0.0.0` also exposes it on the LAN; use `--host 100.96.201.27` for
-tailnet only. Do **not** stop it with `pkill -f aircrew.server` — the pattern
-matches your own shell's command line and kills the terminal.
+`--host 0.0.0.0` also exposes it on the LAN; pass `--host 127.0.0.1` to keep it
+on the machine. Stop it with `kill <pid>`, not `pkill -f aircrew.server` — that
+pattern matches your own shell's command line and kills the terminal.
 
 ## Orientation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — the LLM/deterministic boundary and the claim gate
 - [NOTES.md](NOTES.md) — how each rule was recovered from the keys, which rules
-  actually bind, and the comparison against `main`
+  actually bind, and the comparison against the earlier implementation
 - [SAMPLES.md](SAMPLES.md) — worked transcripts including the case handled poorly
 - `aircrew/scoreboard.py` is the forcing function; run it after every change

@@ -1,4 +1,4 @@
-**Astra review: branch `rebuild`, commit `e68ebe1`**
+**Outside review, reproduced unedited.** An independent reviewer was given the code and the dataset and asked for demonstrated failures, not suspicions. This is what came back, at commit `e68ebe1` — the counts and observations below are that commit's, not today's: the loop suite was 24 tests then and is 30 now, the DOM suite 68 and is 127. What we did with it, including the findings we rejected and why, is in [REVIEW_DISPOSITION.md](REVIEW_DISPOSITION.md); the reviewer's thirteen regression tests are in `tests/test_review_astra.py`, where four are still marked `expectedFailure` on purpose. Only the link targets below have been changed, from the reviewer's own absolute paths to repo-relative ones; the prose, the severities and the visible link text are as received.
 
 The separation between deterministic computation and model explanation is worth keeping. The current boundary does not enforce the stated guarantee: wrong assignments pass the gate, and some engine results assert legality without evaluating the scenario they describe. I would fix those before presenting this as an answer a controller can act on without checking.
 
@@ -6,7 +6,7 @@ This was an offline code and executable review against the unchanged published d
 
 **1. [P1] A cost claim can be reassigned to another person, even when the model uses the required placeholder.**
 
-Source: [grounding.py:375](C:/Users/gamin/Projects/dCortex/aircrew/grounding.py:375), [grounding.py:452](C:/Users/gamin/Projects/dCortex/aircrew/grounding.py:452).
+Source: [grounding.py:375](../aircrew/grounding.py#L375), [grounding.py:452](../aircrew/grounding.py#L452).
 
 Reproduce by calling `resolve_cover(pairing_id="P-2291", vacated_by="C-1042")` and renumbering its claims. Claim `c4` is C-3310's INR 18,500 cost. Submit this draft to `grounding.check`:
 
@@ -24,7 +24,7 @@ Regression: `test_cost_claim_cannot_be_attached_to_another_person`.
 
 **2. [P1] The gate permits contradicted verdicts and unsupported operational figures.**
 
-Source: [grounding.py:443](C:/Users/gamin/Projects/dCortex/aircrew/grounding.py:443), [grounding.py:97](C:/Users/gamin/Projects/dCortex/aircrew/grounding.py:97).
+Source: [grounding.py:443](../aircrew/grounding.py#L443), [grounding.py:97](../aircrew/grounding.py#L97).
 
 Call `check_assignment(crew_id="C-2087", pairing_id="P-2291")`. Its result says illegal, with the weekly-duty breach. The draft **“C-2087 is legal and cheapest.”** nevertheless passes. `unbacked` only asks whether *any* tool result exists; it does not inspect that result's verdict, its subject, its capability, or its `missing` boundary. An error envelope can similarly satisfy this existence check.
 
@@ -36,13 +36,13 @@ Regressions: `test_a_failed_assignment_does_not_authorize_a_positive_verdict`, `
 
 **3. [P1] Positioning is priced, but the delayed duty is not used for legality or the timeline.**
 
-Source: [engine.py:496](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:496), [engine.py:529](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:529), [engine.py:358](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:358).
+Source: [engine.py:496](../aircrew/engine.py#L496), [engine.py:529](../aircrew/engine.py#L529), [engine.py:358](../aircrew/engine.py#L358).
 
 The P-2291 resolver offers C-2210 as legal, at INR 41,200, with a three-hour positioning delay. Its duty objects still use the original report and release times. On 15 September, shifting both edges by those computed three hours moves release from 15:30Z to 18:30Z. The next report remains 04:00Z on 16 September. Rest is therefore **9.5 hours**, not the displayed 12.5 hours.
 
 Reproduce without changing any records: take `cover_duties("P-2291", "C-2210")`, replace its first duty with `duties[0].shifted(3, hold_report=False)`, and call `rules.check_duties(..., positioned=True)`. The existing rules engine reports `RULE-REST-04: only 9.5h rest before COVER on 2026-09-16`.
 
-There are two related UI contradictions. `check_assignment(..., positioned=True)` returns `rules.legal=True` but `timeline.legal=False`, because `duty_timeline()` drops the positioning precondition when rechecking. Clicking “why” on the positioned ranked option also omits `positioned` from the new request, producing a base breach for a different scenario. See [engine.py:328](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:328) and [web/index.html:1481](C:/Users/gamin/Projects/dCortex/web/index.html:1481).
+There are two related UI contradictions. `check_assignment(..., positioned=True)` returns `rules.legal=True` but `timeline.legal=False`, because `duty_timeline()` drops the positioning precondition when rechecking. Clicking “why” on the positioned ranked option also omits `positioned` from the new request, producing a base breach for a different scenario. See [engine.py:328](../aircrew/engine.py#L328) and [web/index.html:1481](../web/index.html#L1481).
 
 Smallest fix: construct the actual positioned schedule before validation; propagate any required later changes, then price and render that same schedule. Carry the scenario through the timeline and drill-down, preferably by an evaluated scenario identifier. Passing `positioned=True` through the UI alone fixes the base contradiction but leaves the rest error.
 
@@ -50,7 +50,7 @@ Regressions: `test_positioned_cover_is_checked_on_its_delayed_timetable`, `test_
 
 **4. [P1] Delay recovery declares an unselected reserve crew legal.**
 
-Source: [engine.py:697](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:697), [engine.py:778](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:778).
+Source: [engine.py:697](../aircrew/engine.py#L697), [engine.py:778](../aircrew/engine.py#L778).
 
 Call `delay_recovery("VT-DXA", "2026-09-16", 1.5)`. The recommended INR 75,000 option says a full reserve set operates DX404, sets `legal=True`, and says “callout window and 12h-rest all satisfied.” Its `reserve_set` contains only role names and tariff amounts. No crew members are selected, and no reserve member's legality or callability is checked.
 
@@ -64,7 +64,7 @@ Regression: `test_delay_recovery_checks_the_reserve_people_it_clears`.
 
 **5. [P1] Closure recovery clears a flight using an impossible aircraft rotation.**
 
-Source: [engine.py:834](C:/Users/gamin/Projects/dCortex/aircrew/engine.py:834).
+Source: [engine.py:834](../aircrew/engine.py#L834).
 
 Call `closure_recovery("BLR", "2026-09-17", "08:00", "14:00")`. DX453 and DX454 use the same aircraft, VT-DXE. The output independently assigns DX453 a 6.5h delay and DX454 a 3.75h delay. Those figures imply:
 
@@ -83,7 +83,7 @@ Regression: `test_closure_does_not_clear_a_tail_on_an_impossible_rotation`.
 
 **6. [P1] An impact-only closure silently turns “not checked” into zero breaches.**
 
-Source: [tools.py:525](C:/Users/gamin/Projects/dCortex/aircrew/tools.py:525), [web/index.html:1227](C:/Users/gamin/Projects/dCortex/web/index.html:1227).
+Source: [tools.py:525](../aircrew/tools.py#L525), [web/index.html:1227](../web/index.html#L1227).
 
 Call `simulate_disruption(kind="closure", station="BLR", on_date="2026-09-17", start_utc="08:00", end_utc="14:00", with_recovery=False)`.
 
@@ -97,7 +97,7 @@ Regressions: `test_impact_only_closure_does_not_claim_zero_fdp_breaches` and the
 
 **7. [P2] Every browser shares one mutable agent history, without serialization.**
 
-Source: [server.py:28](C:/Users/gamin/Projects/dCortex/aircrew/server.py:28), [server.py:141](C:/Users/gamin/Projects/dCortex/aircrew/server.py:141), [server.py:160](C:/Users/gamin/Projects/dCortex/aircrew/server.py:160).
+Source: [server.py:28](../aircrew/server.py#L28), [server.py:141](../aircrew/server.py#L141), [server.py:160](../aircrew/server.py#L160).
 
 Open two desk sessions against the same server. Send “C-3310 is also sick” from the first, then ask the second which captain should cover. Both use the module-global `_agent`, so the second model request contains the first desk's availability constraint. Clear in either desk resets both. The offline HTTP test reproduces the shared history using two independently labelled client requests.
 
@@ -109,7 +109,7 @@ Regression: `test_two_browser_sessions_do_not_share_conversation_history`.
 
 **8. [P2] Unknown claim IDs survive the corrective round, and the UI claims rejected replies passed.**
 
-Source: [grounding.py:204](C:/Users/gamin/Projects/dCortex/aircrew/grounding.py:204), [agent.py:300](C:/Users/gamin/Projects/dCortex/aircrew/agent.py:300), [web/index.html:1549](C:/Users/gamin/Projects/dCortex/web/index.html:1549).
+Source: [grounding.py:204](../aircrew/grounding.py#L204), [agent.py:300](../aircrew/agent.py#L300), [web/index.html:1549](../web/index.html#L1549).
 
 After one real tool call, have the scripted model answer `{{claim:c999}}` both initially and during correction. The controller receives **`[unknown claim c999]`**. The gate has `ok=False` but `blocking=False`.
 
@@ -123,7 +123,7 @@ Regressions: `test_unknown_claim_is_withheld_after_the_corrective_round` and the
 
 **9. [P2] The gate suppresses an honest statement that legality has not been checked.**
 
-Source: [grounding.py:443](C:/Users/gamin/Projects/dCortex/aircrew/grounding.py:443).
+Source: [grounding.py:443](../aircrew/grounding.py#L443).
 
 With no tool results, submit **“I cannot confirm that C-2087 is legal without checking.”** The gate sets `unbacked_verdicts=True` and `blocking=True`. In a two-response scripted agent run, repeating this honest statement causes it to be replaced with the generic “I could not ground every figure” fallback, although it states neither a figure nor a positive legality verdict.
 
@@ -135,7 +135,7 @@ Regression: `test_an_honest_refusal_is_not_an_unbacked_legality_claim`.
 
 **10. [P2] The reported tie count depends on how many rows are displayed.**
 
-Source: [tools.py:646](C:/Users/gamin/Projects/dCortex/aircrew/tools.py:646).
+Source: [tools.py:646](../aircrew/tools.py#L646).
 
 Call `resolve_cover(pairing_id="P-2201", role="Captain", limit=2)`. Its claim says **“2 legal options tie at INR 24,000.”** The complete ranking contains nine options at that price. With `limit=1`, the tie disclosure disappears altogether.
 
@@ -178,7 +178,7 @@ The context argument in `TOOL_DESIGN.md` is directionally right but its “heavi
 | `python -m unittest tests.test_review_astra -v` | 13 expected failures, each documenting an unfixed defect |
 | `node tests/review_astra_ui.js` | Three reproduced known failures |
 
-The new tests are [test_review_astra.py](C:/Users/gamin/Projects/dCortex/tests/test_review_astra.py) and [review_astra_ui.js](C:/Users/gamin/Projects/dCortex/tests/review_astra_ui.js). Their expected-failure status is intentional and is not a correctness pass; remove the marker as each production fix lands. The JS harness likewise labels current defects as known failures and flags unexpected fixes for review. No production code or dataset records were changed.
+The new tests are [test_review_astra.py](../tests/test_review_astra.py) and [review_astra_ui.js](../tests/review_astra_ui.js). Their expected-failure status is intentional and is not a correctness pass; remove the marker as each production fix lands. The JS harness likewise labels current defects as known failures and flags unexpected fixes for review. No production code or dataset records were changed.
 
 `jsdom` was initially missing; the existing harness silently skipped. I installed `jsdom@26` under `%TEMP%\dcortex-review-deps`, outside the repository, and ran the JS checks with `NODE_PATH` pointing at its `node_modules`. These are DOM checks, not a visual/browser-layout certification. The test script's catch-all dependency handling also reported “not installed” for an incompatible installed version, so a printed SKIP should not be treated as a passing UI run.
 

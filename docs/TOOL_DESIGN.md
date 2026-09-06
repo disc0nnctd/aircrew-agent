@@ -47,30 +47,33 @@ seven rules against 24 candidates you need most of it. A thin-tool design either
 ships that into the context or invents pagination and spends twenty round-trips
 assembling it.
 
-**The joined call that answers the whole question costs ~2,500 tokens.**
+**The joined call that answers the whole question costs ~2,600 tokens.**
 
 ## What the joined calls actually cost
 
-Measured, one call each, the full envelope as the model receives it:
+Measured 2026-09-06, one call each, the full envelope as the model receives it.
+The exact calls are listed at the end, so every row can be re-run:
 
 | Tool | chars | ~tokens |
 | --- | --- | --- |
-| `earliest_next_report` | 561 | 140 |
-| `duty_timeline` | 1,283 | 320 |
-| `draft_notification` | 1,577 | 394 |
-| `validate` | 1,467 | 366 |
-| `trace_disruption` | 1,589 | 397 |
-| `lookup(reserves)` | 2,556 | 639 |
-| `crew_profile` | 2,688 | 672 |
-| `lookup(crew, filtered)` | 3,122 | 780 |
-| `check_assignment` | 3,514 | 878 |
-| `simulate_disruption(delay)` | 3,596 | 899 |
-| `lookup(flights, one day)` | 6,659 | 1,664 |
-| `simulate_disruption(closure)` | 7,662 | 1,915 |
-| **`resolve_cover`** | **10,096** | **2,524** |
+| `earliest_next_report` | 594 | 148 |
+| `duty_timeline` | 1,301 | 325 |
+| `trace_disruption` | 1,603 | 400 |
+| `validate` | 1,624 | 406 |
+| `draft_notification` | 1,638 | 409 |
+| `lookup(reserves)` | 2,580 | 645 |
+| `crew_profile` | 2,762 | 690 |
+| `lookup(crew, filtered)` | 3,141 | 785 |
+| `check_assignment` | 3,701 | 925 |
+| `simulate_disruption(delay)` | 3,895 | 973 |
+| `lookup(flights, one day)` | 6,721 | 1,680 |
+| `simulate_disruption(closure)` | 7,794 | 1,948 |
+| **`resolve_cover`, one vacancy** | **10,332** | **2,583** |
+| **`resolve_cover`, two vacancies at once** | **37,519** | **9,379** |
 
-A whole Tier-3 turn is typically two or three of these. The heaviest realistic
-turn is under 5,000 tokens of tool results.
+A whole Tier-3 turn is typically two or three of these, so a single-vacancy turn
+lands in the low thousands of tokens of tool results. The joint form does not:
+the last row is the honest ceiling — see the trade-offs below.
 
 ## Where it was genuinely wasteful, and what changed
 
@@ -92,8 +95,11 @@ recommended               382 chars
 in none**: not by the workspace, not by the scoreboard, not by the answer keys.
 
 Removing it took `resolve_cover` from 23,306 to **10,096 characters**, a **57%
-cut on the single heaviest call in the product**, with no change to any output:
-36/36 engine, 19/19 scenarios, 16/16 loop, 67 UI checks.
+cut on the heaviest single-vacancy call in the product**, with no change to any
+output: 36/36 engine, 19/19 scenarios, and the loop and DOM suites as they stood
+at that commit (16 loop tests, 67 UI checks; they are 30 and 127 today). Those
+are the figures from the commit that made the cut. The same call measures 10,332
+characters today, which is the number in the table above.
 
 A test now pins the shape and the budget, because this is exactly the kind of
 thing that creeps back:
@@ -165,15 +171,15 @@ reserves and rules. Splitting it does not remove the join; it moves it into the
 model, where it becomes arithmetic nobody can check.
 
 **2. A tool returns what a controller would ask next, not the whole table.**
-`crew_profile` costs 672 tokens and covers rank, base, ratings, reserve window,
+`crew_profile` costs 690 tokens and covers rank, base, ratings, reserve window,
 this week's pairings, 7-day duty, headroom, 28-day block, certificates and risk.
 Four separate lookups would cost more in round-trips alone, and each round-trip
 is another chance to route wrongly.
 
-**3. Decision tools stay separate from impact tools.** `trace_disruption` (397
+**3. Decision tools stay separate from impact tools.** `trace_disruption` (400
 tokens) answers "which flights are uncrewed?" without triggering a 24-candidate
 ranking. Folding it into `resolve_cover` would make the cheap question cost
-2,524 tokens every time.
+2,583 tokens every time.
 
 **4. Every field must have a reader.** A tool result is context the model pays
 for on every subsequent turn of the conversation, not just once. `all_breaches`
@@ -187,24 +193,36 @@ tale, and it is a different one from `all_breaches`.
 
 ## The honest trade-offs
 
-**`resolve_cover` is still the heaviest thing here** at ~2,500 tokens, and the
-19 exclusions are 54% of its data even after the cut. They earn it: the answer
-keys grade the rejections with their reasons, and "why not them?" is the
-question a controller actually argues with. But it does mean a long conversation
-carries several of these.
+**`resolve_cover` is still the heaviest single-vacancy call here** at ~2,600
+tokens, and the 19 exclusions are 54% of its data even after the cut. They earn
+it: the answer keys grade the rejections with their reasons, and "why not them?"
+is the question a controller actually argues with. But it does mean a long
+conversation carries several of these.
 
-**`limit` trims options, not exclusions.** `limit=3` saves 1,739 of 10,096
-characters, 17%, because exclusions dominate what is left. That is arguably the
+**`limit` trims options, not exclusions.** `limit=3` saves 1,817 of 10,332
+characters, 18%, because exclusions dominate what is left. That is arguably the
 wrong knob: if the tool needed slimming again, a `brief` mode returning
 exclusion counts by rule rather than per-crew rows would save far more.
 
-**`lookup(entity="flights")` for a whole day costs 1,664 tokens** and is close to
+**`lookup(entity="flights")` for a whole day costs 1,680 tokens** and is close to
 a raw table dump. It is only cheap relative to the 11,000-token file.
 
 **The join hides its own cost from the model.** It cannot tell that one call read
 seven files, so it cannot make a cost-aware choice about which to call. That is
 fine here because the surface is ten tools and the routing is obvious; it would
 not scale to a hundred.
+
+**The 5,000-token figure is a single-call figure, and an outside reviewer found
+the case that breaks it.** A two-captain joint resolution (Q32) answers one
+operational question by returning the whole of two: the optimal plan, the named
+assignments, the tied plans and the per-vacancy results, all in one envelope.
+That is 37,519 characters after renumbering, roughly 9,379 tokens on this
+document's own chars/4 estimate — measured 2026-09-06;
+[REVIEW_ASTRA_FINDINGS.md](REVIEW_ASTRA_FINDINGS.md) measured 37,569 against the
+commit it was written for. That is the honest ceiling, not 5,000, and it is the
+strongest argument against the joined-tool design in this file. It has not been
+fixed. Returning compact plan ids and tie counts to the model, with the detail
+left for the workspace to fetch, would fix it without splitting the join.
 
 ## Reproducing the measurements
 
@@ -220,6 +238,39 @@ print(len(s), "chars ~", len(s) // 4, "tokens")
 
 for k, v in env["data"].items():
     print(f"  {k:24} {len(json.dumps(v, default=str))}")
+```
+
+The calls behind the size table, in the same order:
+
+```python
+CALLS = [
+    ("earliest_next_report", {"release_utc": "2026-09-16T15:30:00Z"}),
+    ("duty_timeline",        {"crew_id": "C-3310", "pairing_id": "P-2291"}),
+    ("trace_disruption",     {"crew_id": "C-1042", "pairing_id": "P-2291"}),
+    ("validate",             {"claim_kind": "assignment_legal", "crew_id": "C-2087",
+                              "pairing_id": "P-2291", "from_date": "2026-09-15"}),
+    ("draft_notification",   {"crew_id": "C-3310", "pairing_id": "P-2291"}),
+    ("lookup",               {"entity": "reserves", "on_date": "2026-09-15", "base": "BLR"}),
+    ("crew_profile",         {"crew_id": "C-1042", "on_date": "2026-09-15"}),
+    ("lookup",               {"entity": "crew", "rank": "Captain", "rating": "A320",
+                              "on_date": "2026-09-15"}),
+    ("check_assignment",     {"crew_id": "C-2087", "pairing_id": "P-2291",
+                              "from_date": "2026-09-15"}),
+    ("simulate_disruption",  {"kind": "delay", "aircraft": "VT-DXA",
+                              "on_date": "2026-09-16", "delay_hours": 1.5}),
+    ("lookup",               {"entity": "flights", "on_date": "2026-09-15"}),
+    ("simulate_disruption",  {"kind": "closure", "station": "BLR", "on_date": "2026-09-17",
+                              "start_utc": "08:00", "end_utc": "14:00"}),
+    ("resolve_cover",        {"pairing_id": "P-2291", "vacated_by": "C-1042"}),
+    ("resolve_cover",        {"vacancies": [{"pairing_id": "P-2205", "role": "Captain"},
+                                            {"pairing_id": "P-2212", "role": "Captain"}]}),
+]
+
+for name, args in CALLS:
+    e = dispatch(t, name, dict(args))
+    renumber([e])
+    n = len(json.dumps(e, default=str, ensure_ascii=False))
+    print(f"{name:22} {n:7} chars ~{n // 4:6} tokens")
 ```
 
 Which files a tool reads is measured separately, by instrumenting every

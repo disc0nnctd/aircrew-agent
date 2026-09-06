@@ -8,7 +8,7 @@
         <mxCell id="title" value="Crew Ops Advisor | system architecture" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=28;fontColor=#243342;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="40" y="25" width="1720" height="42" />
         </mxCell>
-        <mxCell id="subtitle" value="Current implementation: rebuild / 8c3c6e6. Native, editable shapes; arrows show calls and data dependencies." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#536477;fontStyle=0;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Native, editable shapes; arrows show calls and data dependencies." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#536477;fontStyle=0;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="40" y="73" width="1720" height="34" />
         </mxCell>
         <mxCell id="browserframe" value="BROWSER" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;fillColor=#fafbfc;strokeColor=#d9e0e7;dashed=1;align=left;verticalAlign=top;spacing=18;fontSize=15;fontStyle=1;fontColor=#627284;fontFamily=Helvetica;container=0;" vertex="1" parent="1">

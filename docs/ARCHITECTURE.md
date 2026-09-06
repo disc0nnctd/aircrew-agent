@@ -1,5 +1,11 @@
 # Architecture: where the language model stops
 
+![Crew Ops Advisor system architecture](architecture-system-overview.png)
+
+*The same boundary as a drawn diagram. Source: `docs/ARCHITECTURE.drawio`,
+page "01 System overview". The ASCII stack below is the same picture, and
+is the one to read if the image does not render.*
+
 The brief's real question is which work belongs to the model and which to
 deterministic code. This document is the answer, and the boundary it draws is
 enforced by a mechanism rather than by a sentence in a prompt.
@@ -29,11 +35,11 @@ enforced by a mechanism rather than by a sentence in a prompt.
          │  duration or verdict)                        │
          ▼                                              │
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ TOOL LAYER  aircrew/tools.py — 9 tools, one envelope                    │
+│ TOOL LAYER  aircrew/tools.py — 10 tools, one envelope                   │
 │                                                                         │
 │  lookup · crew_profile · trace_disruption · check_assignment ·          │
 │  duty_timeline · simulate_disruption · resolve_cover ·                  │
-│  draft_notification · validate                                          │
+│  earliest_next_report · draft_notification · validate                   │
 │                                                                         │
 │  Every result carries:                                                  │
 │    claims[]  each figure/verdict, with an id, validated text and basis  │

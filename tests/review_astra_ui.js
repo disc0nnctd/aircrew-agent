@@ -5,7 +5,7 @@ const { execFileSync } = require('child_process');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
 const root = path.join(__dirname, '..');
-const payload = JSON.parse(execFileSync('python', ['-c',
+const payload = JSON.parse(execFileSync('python3', ['-c',
   "import json; from aircrew.tools import Tools,dispatch; print(json.dumps(dispatch(Tools(),'simulate_disruption',{'kind':'closure','station':'BLR','on_date':'2026-09-17','start_utc':'08:00','end_utc':'14:00','with_recovery':False})))"
 ], { cwd: root, encoding: 'utf8' }));
 const dom = new JSDOM(fs.readFileSync(path.join(root, 'web/index.html'), 'utf8'), {

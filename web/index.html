@@ -1057,11 +1057,11 @@ function showBriefing(){
       const t = el('table','brief-table');
       t.innerHTML = '<thead><tr><th>Measurement</th><th>Result</th><th>How</th></tr></thead>';
       const tb = el('tbody');
-      [['38 questions through the engine', '36/36 gradable', 'python -m aircrew.scoreboard'],
+      [['38 questions through the engine', '36/36 gradable', 'python3 -m aircrew.scoreboard'],
        ['6 worked scenarios', '19/19 checks', 'same command'],
-       ['Agent loop and claim gate', '21/21', 'python -m tests.test_agent_loop'],
-       ['Workspace and chat pane', '119 checks', 'node tests/ui_check.js'],
-       ['38 questions through the agent', '35/36 re-scored, not re-run live', 'python -m aircrew.replay']]
+       ['Agent loop and claim gate', '30/30', 'python3 -m tests.test_agent_loop'],
+       ['Workspace and chat pane', '127 checks', 'npm i && node tests/ui_check.js'],
+       ['38 questions through the agent', '35/36 re-scored, not re-run live', 'python3 -m aircrew.replay']]
         .forEach(row => {
           const tr = el('tr');
           row.forEach((c, i) => tr.appendChild(el('td', i === 1 ? 'num' : null, c)));

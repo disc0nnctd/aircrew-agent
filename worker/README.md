@@ -5,12 +5,13 @@ that draws them. Every panel — the ranked cover options, the duty timeline, th
 exclusions with the rule that stopped each candidate — is computed by the same
 Python that runs locally, over `/api/tool`.
 
-The chat does not deploy. That is a decision, not an omission; see below.
+The chat deploys too, with the key living in the browser rather than at the
+edge — see "The chat, at the edge" below.
 
 ## Deploy
 
 ```bash
-python worker/build.py                 # assemble worker/dist
+python3 worker/build.py                # assemble worker/dist
 cd worker
 npx wrangler deploy
 ```

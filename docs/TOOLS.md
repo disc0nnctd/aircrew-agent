@@ -132,7 +132,7 @@ claim: earliest next report is 2026-09-17T03:30:00Z
 
 What breaks when someone drops out: the flights, per day, with passenger counts.
 Deliberately separate from `resolve_cover`, so "which flights are uncrewed?"
-cannot trigger a 150-candidate ranking.
+cannot trigger a 24-candidate ranking.
 
 ```jsonc
 {"crew_id": "C-1042", "pairing_id": "P-2291"}
@@ -256,12 +256,16 @@ claims: 5 candidates are legal
         19 candidates are excluded (9 rest, 8 aircraft rating, ...)
         the cheapest legal option is Assign Captain C-3310 (reserve callout) at INR 18,500
         Assign Captain C-3310 (reserve callout) costs INR 18,500
-        3 legal options tie at INR 24,000, so cost does not separate them
+        ... one claim per option, ending Cancel all 6 flights of the pairing costs INR 1,500,000
 ```
 
 `exclude_crew` **re-simulates**; it does not read the next row down. That is
 tested, because "the next-cheapest" and "the cheapest without X" are different
-answers whenever the excluded person changed anyone else's rest.
+answers whenever the excluded person changed anyone else's rest. The follow-up
+call returns 4 legal candidates and one claim the first call does not make —
+`3 legal options tie at INR 24,000, so cost does not separate them`. The tie is
+counted over the whole candidate list, not over the rows that fit under `limit`,
+which is a correction that came from an outside review.
 
 The joint form searches combinations rather than solving each vacancy
 independently, because the cheapest option for each separately can be the same

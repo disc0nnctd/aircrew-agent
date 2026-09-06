@@ -5,7 +5,7 @@ reproduced with the command shown. Nothing here is illustrative.
 
 ### A. Cover a sick captain (Tier 3, Q31 / scenario S2)
 ```
-$ python -m aircrew.cli resolve --pairing P-2291 --vacated-by C-1042 --limit 5
+$ python3 -m aircrew.cli resolve --pairing P-2291 --vacated-by C-1042 --limit 5
 5 legal candidates, 19 excluded (9 rest, 8 aircraft rating, 1 duty hours, 1 base / on-call window). Ranked by cost, then crew id; cancellation is always last.
 
 Established:
@@ -24,7 +24,7 @@ Not established by this result:
 
 ### B. Why one candidate was ruled out (Tier 2, Q28)
 ```
-$ python -m aircrew.cli check --crew C-5837 --pairing P-2291
+$ python3 -m aircrew.cli check --crew C-5837 --pairing P-2291
 ILLEGAL under the seven rules; callable. These are two separate questions -- report the one that was asked.
 
 Established:
@@ -42,35 +42,47 @@ sick too?" This is not the next row of the previous list. It is a new
 enumeration, re-checked for legality and re-priced.
 
 ```
-$ python -m aircrew.cli resolve --pairing P-2291 --vacated-by C-1042 --exclude C-3310 --limit 3
+$ python3 -m aircrew.cli resolve --pairing P-2291 --vacated-by C-1042 --exclude C-3310 --limit 3
 4 legal candidates, 19 excluded (9 rest, 8 aircraft rating, 1 duty hours, 1 base / on-call window). Ranked by cost, then crew id; cancellation is always last.
 
 Established:
   [c1] 4 candidates are legal
   [c2] 19 candidates are excluded (9 rest, 8 aircraft rating, 1 duty hours, 1 base / on-call window)
   [c3] the cheapest legal option is Assign Captain C-1526 (day-off callout) at INR 24,000
-  [c4] Assign Captain C-1526 (day-off callout) costs INR 24,000
-  [c5] Assign Captain C-3983 (day-off callout) costs INR 24,000
-  [c6] Assign Captain C-5566 (day-off callout) costs INR 24,000
+  [c4] 3 legal options tie at INR 24,000, so cost does not separate them
+  [c5] Assign Captain C-1526 (day-off callout) costs INR 24,000
+  [c6] Assign Captain C-3983 (day-off callout) costs INR 24,000
+  [c7] Assign Captain C-5566 (day-off callout) costs INR 24,000
 
 Not established by this result:
   - excluded candidates carry the rule that stopped them; they are in data.exclusions
 ```
 
+The tie is counted over the whole candidate list, not over the rows that fit
+under `--limit`. That came from an outside review and is pinned by
+`test_presentation_limit_does_not_change_the_number_of_ties`.
+
 ### D. A delay that breaks the duty (Tier 3, Q33 / scenario S4)
 ```
-$ python -m aircrew.cli delay --aircraft VT-DXA --date 2026-09-16 --hours 1.5 --mode technical
+$ python3 -m aircrew.cli delay --aircraft VT-DXA --date 2026-09-16 --hours 1.5 --mode technical
 technical delay of 1.5h. FDP breached.
 
 Established:
-  [c1] FDP after the delay is 12.75h against a 12.0h limit for 4 sectors
-  [c2] the rostered crew BREACH RULE-FDP-01
-  [c3] Original crew operates DX401–DX403 (delayed); full reserve set (CPT, FO, SCC, 3 CC) operates DX404 costs INR 75,000
-  [c4] Cancel DX404 costs INR 250,000
+  [c1] FDP after the delay is 12.75h
+  [c2] the FDP limit is 12.0h for 4 sectors
+  [c3] the rostered crew BREACH RULE-FDP-01
+  [c4] Original crew operates DX401–DX403 (delayed); full reserve set (CPT, FO, SCC, 3 CC) operates DX404 costs INR 75,000
+  [c5] Cancel DX404 costs INR 250,000
 
 Not established by this result:
   - downstream duties of the same crew are not re-checked here; use duty_timeline for the rest of their week
+  - a reserve option names roles and their tariff, not people; no individual's on-call window or rest has been checked here
 ```
+
+The figure and its limit are separate claims because a claim id has to be
+substitutable on its own; `test_the_fdp_figure_and_its_limit_are_separate_claims`
+pins it. The second "not established" line came from an outside review — see
+[REVIEW_DISPOSITION.md](REVIEW_DISPOSITION.md).
 
 ### E. A case the system handles poorly
 

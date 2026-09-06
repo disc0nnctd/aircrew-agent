@@ -19,7 +19,7 @@ findings we decided not to act on, which are the interesting ones.
 
 Nine of the reviewer's thirteen regression tests now pass; their
 `expectedFailure` markers are removed. Engine 36/36, scenarios 19/19, loop
-27/27.
+30/30.
 
 The first is the one that mattered. The product's central claim is that
 substitution prevents a *real* figure being attached to the wrong thing, and
@@ -64,7 +64,9 @@ and that is finding 5 in one sentence. But a hackathon build is graded against
 the published keys, and a system that quietly overrules them is not more correct,
 it is differently wrong and undocumented.
 
-The implementations are kept on the `astra-engine` branch rather than deleted.
+All three were implemented before they were rejected, and the implementations
+are kept locally rather than deleted — they are not in this repository, because
+a branch that overrules the published keys should not be the one a judge finds.
 If the organisers confirm the keys should change, the work is done.
 
 What we did take from those three is the part that costs nothing and is true
@@ -81,10 +83,21 @@ the unearned certainty is gone.
 
 ## Still open
 
-Finding 3's UI half is real regardless of the verdict argument: opening "why" on
-a positioned row asks the engine to evaluate the *unpositioned* scenario, so the
-drill-down answers a different question from the row it came from. That is a
-browser change, tracked separately.
+Three UI findings are still open, and `node tests/review_astra_ui.js` prints all
+three as `KNOWN FAILURE` rather than hiding them:
+
+- **A positioned row's drill-down changes the question.** Opening "why" on a
+  positioned option asks the engine to evaluate the *unpositioned* scenario, so
+  the drill-down answers a different question from the row it came from. This is
+  finding 3's UI half, and it is real regardless of the verdict argument above.
+- **An uncomputed re-crew count renders as zero.** "Need re-crew" shows `0` where
+  the honest render is "not computed".
+- **A withheld reply is still labelled as passed.** A reply the gate withheld
+  (`grounded: false`) still draws "the reply above passed", which is the one
+  label that must never be wrong.
+
+All three are browser-side and none of them changes a computed figure. They are
+tracked, not fixed.
 
 ## The reviews as evidence
 

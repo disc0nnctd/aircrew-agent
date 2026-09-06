@@ -29,33 +29,42 @@ the drill-down that answers "why not them?"
 
 ## Where it stands
 
-| Measurement | Result |
-| --- | --- |
-| The 38 questions, through the engine | **36 / 36 gradable pass** (2 are rubrics, not values, and are never counted as passes) |
-| The 6 worked scenarios | **19 / 19 checks pass**, including S2's 19 exclusions byte for byte |
-| Agent loop and claim gate | **28 / 28 tests pass** |
-| The workspace, in a headless browser | **119 / 119 DOM checks pass** |
-| Two outside reviews, their own regressions | **9 / 13 pass**; the other 4 are [findings we rejected](docs/REVIEW_DISPOSITION.md) because they contradict the published answer keys |
-| The 38 questions, *through the agent* (gpt-5.6-luna) | Last full browser sweep: **38 / 38 answered**, no console errors. That sweep predates the current claim gate, which is stricter — see [docs/ISSUES.md](docs/ISSUES.md). |
+| Measurement | Result | Reproduce |
+| --- | --- | --- |
+| The 38 questions, through the engine | **36 / 36 gradable pass** (2 are rubrics, not values, and are never counted as passes) | `python3 -m aircrew.scoreboard` |
+| The 6 worked scenarios | **19 / 19 checks pass**, including S2's 19 exclusions byte for byte | same command |
+| Agent loop and claim gate | **30 / 30 tests pass** | `python3 -m tests.test_agent_loop` |
+| The workspace, in a headless browser | **127 / 127 DOM checks pass** | `npm i && node tests/ui_check.js` |
+| Two outside reviews, their own regressions | **9 / 13 pass**; the other 4 are [findings we rejected](docs/REVIEW_DISPOSITION.md) because they contradict the published answer keys | `python3 -m tests.test_review_astra` |
+| The 38 questions, *through the agent* (gpt-5.6-luna) | **35 / 36 gradable** on the last recorded run, re-scored offline against the calls the model actually made; the one genuine failure is a routing miss on Q27. Three fixes have landed since and are not live-verified — run 3 has not been run. [docs/ISSUES.md](docs/ISSUES.md) has the run table. | `python3 -m aircrew.replay` (needs a key) |
 
 One caveat worth stating plainly: the engine score checks whether each expected
 value appears in the tool results, which is retrieval and routing coverage. It
 is not a judgement that the sentence the controller reads is the right one.
 
 ```bash
-python -m aircrew.scoreboard          # the engine number, no model required
-python -m tests.test_agent_loop       # the gate and the loop
-node tests/ui_check.js                # the workspace and chat pane (needs jsdom)
+python3 -m aircrew.scoreboard         # the engine number, no model required
+python3 -m tests.test_agent_loop      # the gate and the loop
+npm i && node tests/ui_check.js       # the workspace and chat pane, under jsdom
+node tests/review_astra_ui.js         # the outside review's UI regressions
 ```
+
+Without jsdom the DOM check prints `SKIP` and runs nothing; a skip is not a
+pass. `review_astra_ui.js` prints three `KNOWN FAILURE` lines by design — they
+are the three UI findings still open, listed in
+[docs/REVIEW_DISPOSITION.md](docs/REVIEW_DISPOSITION.md).
 
 ## Setup
 
-Python 3.10+. No dependencies, anywhere, including the chat pane.
+Python 3.10+ and nothing else. The engine, the CLI, the workspace and the chat
+loop are standard library only — there is no `requirements.txt`, because there
+is nothing to put in one. The single third-party package in the repository is
+`jsdom`, a devDependency of the DOM test; nothing that ships depends on it.
 
 ```bash
-git clone <this repo> && cd aircrew-agent
-python -m aircrew.scoreboard          # should print 36/36 and 19/19
-python -m aircrew.server              # http://127.0.0.1:8765
+git clone https://github.com/disc0nnctd/aircrew-agent && cd aircrew-agent
+python3 -m aircrew.scoreboard         # should print 36/36 and 19/19
+python3 -m aircrew.server             # http://127.0.0.1:8765
 ```
 
 For the chat pane, an OpenAI-compatible endpoint. Still no dependencies: the
@@ -65,7 +74,7 @@ loop posts to `/chat/completions` over the standard library.
 export AIRCREW_API_KEY=...
 export AIRCREW_MODEL=gpt-5.6-luna     # default
 export AIRCREW_BASE_URL=...           # default https://api.openai.com/v1
-python -m aircrew.server
+python3 -m aircrew.server
 ```
 
 Without a key the server says so and the workspace runs on the engine alone —
@@ -73,12 +82,12 @@ every recovery the product can recommend is still reachable, from the buttons in
 the UI or from the CLI.
 
 ```bash
-python -m aircrew.cli resolve  --pairing P-2291 --vacated-by C-1042
-python -m aircrew.cli resolve  --pairing P-2291 --vacated-by C-1042 --exclude C-3310
-python -m aircrew.cli check    --crew C-5837 --pairing P-2291
-python -m aircrew.cli delay    --aircraft VT-DXA --date 2026-09-16 --hours 1.5 --mode technical
-python -m aircrew.cli closure  --station BLR --date 2026-09-17 --start 08:00 --end 14:00
-python -m aircrew.cli timeline --crew C-3310 --pairing P-2291
+python3 -m aircrew.cli resolve  --pairing P-2291 --vacated-by C-1042
+python3 -m aircrew.cli resolve  --pairing P-2291 --vacated-by C-1042 --exclude C-3310
+python3 -m aircrew.cli check    --crew C-5837 --pairing P-2291
+python3 -m aircrew.cli delay    --aircraft VT-DXA --date 2026-09-16 --hours 1.5 --mode technical
+python3 -m aircrew.cli closure  --station BLR --date 2026-09-17 --start 08:00 --end 14:00
+python3 -m aircrew.cli timeline --crew C-3310 --pairing P-2291
 ```
 
 ## Live
@@ -97,11 +106,32 @@ isolate does not outlive a request, so nothing is stored at the edge.
 To deploy your own:
 
 ```bash
-python worker/build.py
+python3 worker/build.py
 cd worker && npx wrangler deploy      # needs Node 22
 ```
 
 [worker/README.md](worker/README.md) has the detail.
+
+## Documentation
+
+| Document | What it is for |
+| --- | --- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The boundary between the model and the deterministic engine, and the claim gate that enforces it |
+| [docs/TOOLS.md](docs/TOOLS.md) | The ten tools, the claim envelope, and which data files each one measurably reads |
+| [docs/TOOL_DESIGN.md](docs/TOOL_DESIGN.md) | Why the surface is ten joined tools rather than seventeen thin ones, priced in tokens |
+| [docs/FLOW.md](docs/FLOW.md) | One question end to end, and the gate attacked with fifteen deliberately adversarial mislabels |
+| [docs/THE_38_QUESTIONS.md](docs/THE_38_QUESTIONS.md) | All 38 graded questions, with the call that actually answers each one |
+| [docs/DESCRIPTION.md](docs/DESCRIPTION.md) | The product in prose, and how the three question tiers are covered |
+| [docs/SAMPLES.md](docs/SAMPLES.md) | Worked transcripts, including [the case it handles poorly](docs/SAMPLES.md#e-a-case-the-system-handles-poorly) |
+| [docs/NOTES.md](docs/NOTES.md) | How each rule was recovered from the answer keys, which rules actually bind, and the dead ends |
+| [docs/ISSUES.md](docs/ISSUES.md) | Open issues, the limits of the gate, and every bug found with its evidence |
+| [docs/REVIEW_DISPOSITION.md](docs/REVIEW_DISPOSITION.md) | What we did with two outside reviews — including the four findings we rejected, and why |
+| [docs/REVIEW_ASTRA_FINDINGS.md](docs/REVIEW_ASTRA_FINDINGS.md) | One of those reviews, unedited, with its thirteen regression tests in `tests/test_review_astra.py` |
+| [docs/DECK.md](docs/DECK.md) | Ten slides written to be read; the presented deck is [docs/crew_ops_advisor_project_deck.pptx](docs/crew_ops_advisor_project_deck.pptx) |
+| [worker/README.md](worker/README.md) | The Cloudflare Workers deployment behind the live URL above |
+| [problem_statement/](problem_statement/) | The organisers' brief and dataset, reproduced verbatim. Their words and their internal notes, not ours |
+
+Index also at [docs/README.md](docs/README.md).
 
 ## Layout
 
@@ -111,7 +141,7 @@ aircrew/
   rules.py       the seven rules; Finding carries numbers, render() carries words
   engine.py      impact, resolver, costing, ranking, joint search, recovery
   query.py       the typed Tier-1 lookups
-  tools.py       9 tools; the claim envelope
+  tools.py       10 tools; the claim envelope
   grounding.py   the claim gate
   agent.py       the loop, for an OpenAI-compatible model
   scoreboard.py  replays the 38 questions and 6 scenarios against the keys
@@ -119,7 +149,7 @@ aircrew/
   cli.py         the engine from a terminal, no model
   server.py      stdlib HTTP; /api/tool and /api/chat
 web/index.html   the two-pane workspace, no build step
-docs/            architecture, samples, build notes, deck
+docs/            architecture, tools, samples, build notes, deck — index in docs/README.md
 ```
 
 ## Approach
@@ -168,7 +198,7 @@ asked, ties). There is no push-back heuristic for a model that announces a tool
 instead of calling it — that belongs in the "add only if measured" pile, and it
 has not been measured.
 
-**Nine tools, not seventeen.** The seventeen in the brief are the question list
+**Ten tools, not seventeen.** The seventeen in the brief are the question list
 projected onto function names; most Tier-1 entries are one `SELECT … WHERE` and
 several Tier-2/3 entries are the same engine primitive dressed differently.
 Collapsing lookups into `lookup(entity, …)` and the what-ifs into
@@ -176,7 +206,7 @@ Collapsing lookups into `lookup(entity, …)` and the what-ifs into
 leaves the code as one engine with a few entry points. The design notes that
 were load-bearing all survive: `check_assignment` still returns two verdicts,
 `trace_disruption` is still separate from `resolve_cover` so "which flights are
-uncrewed?" cannot trigger a 150-candidate ranking, and exclusions still live
+uncrewed?" cannot trigger a 24-candidate ranking, and exclusions still live
 inside the resolve result.
 
 ## Honest trade-offs
@@ -186,7 +216,7 @@ first run through `gpt-5.6-luna` scored **21/38**. Fixing what that exposed — 
 of it in this codebase, none of it in the model — took it to 32/38 as reported,
 and to **35/36 gradable** once the scorer itself was fixed. The remaining failure
 is a routing miss on Q27. Three fixes landed after the last full run and are not
-live-verified; **run `python -m aircrew.replay` before quoting any number.**
+live-verified; **run `python3 -m aircrew.replay` before quoting any number.**
 
 The agent-level failures were almost all tool-surface defects invisible from the
 engine: a model that fills every optional parameter with `""`, a hallucinated
@@ -195,11 +225,25 @@ a tool that the 17→9 collapse had silently dropped. Two more were the *scorer*
 which escaped the answer keys' em dash and so could never match two correct
 answers. Details in [docs/ISSUES.md](docs/ISSUES.md).
 
-**The claim gate matches figures, not meaning.** A number is accepted if it
-appears anywhere in this turn's tool results. So "the delay costs 486" passes
-when 486 is that turn's passenger count. The gate catches invention, which is
-the dangerous failure; it does not catch a figure attached to the wrong label.
-Making it stricter would need the model to cite a claim id for every figure, and
+**The claim gate is eight checks, and one of them is a heuristic.** A reply is
+refused if it carries a figure that appears in no tool result this turn, a
+figure written out as a word, a verdict with nothing behind it, a verdict the
+tool results contradict, a claim attached to the wrong subject, a claim id this
+turn does not have, a tool name leaked into the prose, or a real figure written
+under the wrong kind of label. The model is asked to write figures as
+`{{claim:c7}}` placeholders, which the gate replaces with the engine's own
+rendering, so a substituted figure arrives carrying the engine's words and
+cannot land under the wrong label. A figure the model types itself gets the
+label check instead: "the delay costs 486" is refused when 486 is that turn's
+passenger count, because `mislabelled()` classifies both the field the figure
+came from and the word it is written under, and rejects the mismatch.
+
+That last check is a heuristic, not a proof, and it is the one place the gate
+can be beaten by a correct-looking sentence. [docs/FLOW.md](docs/FLOW.md)
+records what fifteen deliberately adversarial mislabels did to it — **9 caught,
+6 missed** — and names the shape of every miss: a figure with no kind word near
+it ("that comes to 486"), which leaves the check nothing to contradict. Closing
+that gap would mean demanding a claim id for every figure in every sentence, and
 a gate that fires on correct answers gets switched off.
 
 **One case the system handles poorly** — a paid callout for someone already
@@ -208,23 +252,29 @@ working the pairing — is documented with analysis in
 places where the reference contradicts itself, and everything that was tried and
 thrown away, are in [docs/NOTES.md](docs/NOTES.md).
 
-**Cross-checked against `main`,** a complete independent implementation of the
-same brief with no common ancestor. Across all 156 (pairing, role) vacancies the
-**rank-1 recommendation is identical in 156/156** and the full ranked list in
-105/156; every remaining difference is `main` offering the sole incumbent of a
-vacant role as a candidate to cover their own vacancy. Detail in
-[docs/NOTES.md §8](docs/NOTES.md#8-compared-with-main).
+**Cross-checked against an earlier independent implementation** of the same
+brief by the same author — a first pass, built and then replaced rather than
+extended, sharing no code and no common ancestor with this one. Across all 156
+(pairing, role) vacancies the **rank-1 recommendation is identical in 156/156**
+and the full ranked list in 105/156; every remaining difference is the older
+build offering the sole incumbent of a vacant role as a candidate to cover their
+own vacancy. That implementation is not published here, so this figure is
+reported rather than reproducible from this repository. Detail in
+[docs/NOTES.md §8](docs/NOTES.md#8-compared-with-the-earlier-implementation).
 
 **Two of the seven rules never eliminate anybody.** Across all 156 (pairing,
 role) vacancies in the roster, RULE-FDP-01 and RULE-FLT-03 produce zero
 exclusions — the maximum 28-day block in the whole dataset is 79.28h against a
-100h limit. Both are still reported in `rules_checked` because the keys require
-it, but "we checked seven rules" would overstate what happened. Measurements in
+100h limit, recomputed from `daily_history` plus the roster; the published
+`flight_hours_28d` field peaks at 79.24h for the same crew member, C-2143. Both
+are still reported in `rules_checked` because the keys require it, but "we
+checked seven rules" would overstate what happened. Measurements in
 [docs/NOTES.md §3](docs/NOTES.md#3-the-surprise-which-rules-actually-bind).
 
-**Ten tools, not nine.** `earliest_next_report` was added back after the replay
-showed Q23 was unanswerable without it — the earned-scaffolding rule working in
-reverse.
+**The tenth tool was added back after measurement.** Collapsing seventeen to
+nine dropped `earliest_next_report`, and the replay showed Q23 was unanswerable
+without it. Nine was the right instinct; ten is the measured answer — the
+earned-scaffolding rule working in reverse.
 
 **Two questions have rubrics for answer keys** (Q36, Q38). They are marked
 `GEN` and never counted as passes; grading a rubric against itself is a fake

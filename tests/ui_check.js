@@ -1,11 +1,12 @@
 /* The workspace and the chat pane, exercised against a real engine payload.
 
    Run with:  node tests/ui_check.js
-   Needs jsdom (`npm i jsdom`); it is the only dependency in the project and it
-   is a test-only one, so the check skips rather than fails when it is absent.
+   Needs jsdom; `npm i` installs it from package.json. It is the only dependency
+   in the project and it is a test-only one. When it is absent this harness
+   exits 2, not 0, so a skip cannot be read as a pass.
 
    The fixture is genuine resolve_cover output. Regenerate it with:
-     python -c "import json; from aircrew.tools import Tools,dispatch,renumber;        e=dispatch(Tools(),'resolve_cover',{'pairing_id':'P-2291','vacated_by':'C-1042'});        renumber([e]); json.dump(e,open('tests/fixture_resolve_cover.json','w'),indent=1,default=str)"
+     python3 -c "import json; from aircrew.tools import Tools,dispatch,renumber;       e=dispatch(Tools(),'resolve_cover',{'pairing_id':'P-2291','vacated_by':'C-1042'});        renumber([e]); json.dump(e,open('tests/fixture_resolve_cover.json','w'),indent=1,default=str)"
 
    The boundary fixtures come from a running server:
      curl -s localhost:8765/api/tools  -o tests/fixture_tools.json
@@ -15,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 let JSDOM;
 try { ({ JSDOM } = require('jsdom')); }
-catch { console.log('SKIP  jsdom is not installed (npm i jsdom)'); process.exit(0); }
+catch { console.log('SKIP  jsdom is not installed. Run: npm i'); console.log('A skip is not a pass: 0 of 127 DOM checks ran.'); process.exit(2); }
 
 const ROOT = path.join(__dirname, '..');
 const HTML = path.join(ROOT, 'web/index.html');
@@ -186,6 +187,7 @@ setTimeout(async () => {
                  {name:'lookup', arguments:{entity:'crew'}}]});
   check('all three steps are drawable', mixed.length === 3, mixed.length + ' drawable');
   // a payload a panel cannot render must cost the panel, never the turn
+  console.log('NOTE  the TypeError below is deliberate: it is the malformed payload this check feeds in.');
   const broken = w.drawableSteps({tool_results:[{summary:'x', data:{crew_id:'C-1'}}],
                                   tool_calls:[{name:'check_assignment', arguments:{}}]});
   check('a malformed payload is skipped, not thrown', broken.length === 0);

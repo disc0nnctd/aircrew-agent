@@ -85,10 +85,11 @@ has no costs in it.
 
 ---
 
-## 7 — Nine tools, not seventeen
+## 7 — Ten tools, not seventeen
 
 `lookup · crew_profile · trace_disruption · check_assignment · duty_timeline ·
-simulate_disruption · resolve_cover · draft_notification · validate`
+simulate_disruption · resolve_cover · earliest_next_report · draft_notification ·
+validate`
 
 Two that earn their separation:
 
@@ -97,7 +98,7 @@ Two that earn their separation:
   Q24 keys on a duty breach where S2 excludes the same person on the on-call
   window. One boolean would make one answer unreachable.
 - **`trace_disruption` stays out of `resolve_cover`.** "Which flights are
-  uncrewed?" must not trigger a 150-candidate ranking nobody asked for.
+  uncrewed?" must not trigger a 24-candidate ranking nobody asked for.
 
 No tool takes a cost, a count, a duration or a verdict. Nowhere for a remembered
 figure to enter. Asserted in the test suite against the schemas.
@@ -142,14 +143,22 @@ Two panes. Conversation left, evidence right.
 
 ## 10 — What we would tell you before you trusted it
 
-- **The agent number is not measured.** 36/36 is the engine. The harness that
-  replays the 38 questions *through the model* is written and unrun — no API key
-  in the build environment. They are different numbers.
-- **The gate matches figures, not meaning.** It catches invention. It would not
-  catch a real figure attached to the wrong label.
+- **The agent number and the engine number are different numbers.** 36/36 is the
+  engine, with no model attached. Through the model, the first run scored 21/38;
+  fixing what it exposed — all of it in this codebase — took it to 32/38 as
+  reported and **35/36 gradable** once the scorer's own bug was fixed. The one
+  genuine failure is a routing miss on Q27. Three fixes have landed since and run
+  3 has not been made.
+- **The gate's label check is a heuristic.** It catches invention outright, and it
+  catches a real figure under the wrong kind of label — 9 of 15 deliberately
+  adversarial mislabels. The other 6 are named in the notes rather than hidden.
 - **Where the reference data is wrong, we are wrong with it.** Two crew already
   working a pairing are offered as paid callouts for it, because the answer key
   offers them. Documented, reproducible, and the fix costs two scenario checks.
 
 *Overstating capability is the one thing this product cannot afford, in a deck
 or in a reply.*
+
+*Every number on these slides is reproduced by a command in the README's results
+table. When a count changes, regenerate them from `aircrew.tools.SCHEMAS` and
+`problem_statement/data/questions.json` rather than editing a slide.*
